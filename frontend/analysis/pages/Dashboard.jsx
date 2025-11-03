@@ -8,7 +8,7 @@ import {
   EyeOutlined
 } from '@ant-design/icons'
 import { systemsApi, simulationsApi } from '../services/api'
-import SolarPanel3D from '../components/ThreeD/SolarPanel3D'
+import SolarPanel3D_Lite from '../components/ThreeD/SolarPanel3D_Lite'
 import SolarTrackingChart from '../components/SolarTrackingChart'
 
 const { Title, Text } = Typography
@@ -185,8 +185,8 @@ const Dashboard = () => {
         {/* 3D展示区域 - 占据2/3宽度 */}
         {show3D && (
           <Col span={16}>
-            <Card title="3D光伏板跟踪太阳演示" style={{ height: '700px' }}>
-              <SolarPanel3D />
+            <Card title="3D光伏板跟踪太阳演示（优化版）" style={{ height: '700px' }} bodyStyle={{ height: 'calc(100% - 57px)', padding: 0 }}>
+              <SolarPanel3D_Lite />
             </Card>
           </Col>
         )}

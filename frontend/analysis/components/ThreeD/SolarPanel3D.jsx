@@ -42,14 +42,21 @@ const SolarPanel = ({ position, sunPosition }) => {
 }
 
 // 简单的支架组件
-const PanelMount = ({ position }) => {
+const PanelMount = ({ position, useFixedHeight = true }) => {
+  // 使用固定杆子高度，确保所有杆子长度一致
+  const fixedPoleHeight = 2.5
+  const poleHeight = useFixedHeight ? fixedPoleHeight : (position[1] - 0.5)
+  const groundHeight = position[1] - poleHeight
+  
   return (
-    <group position={position}>
-      <mesh position={[0, 0.5, 0]} castShadow>
-        <cylinderGeometry args={[0.05, 0.05, 1, 8]} />
+    <group position={[position[0], groundHeight, position[2]]}>
+      {/* 支撑杆 - 从地面开始 */}
+      <mesh position={[0, poleHeight / 2, 0]} castShadow>
+        <cylinderGeometry args={[0.05, 0.05, poleHeight, 8]} />
         <meshStandardMaterial color="#666666" />
       </mesh>
-      <mesh position={[0, 1, 0]} castShadow>
+      {/* 顶部连接件 */}
+      <mesh position={[0, poleHeight, 0]} castShadow>
         <boxGeometry args={[0.1, 0.1, 0.5]} />
         <meshStandardMaterial color="#444444" />
       </mesh>
@@ -182,15 +189,20 @@ const buildDefaultPanels = () => {
   return positions
 }
 
-const SolarArray = ({ panelNodes }) => {
+const SolarArray = ({ panelNodes, maxDisplayCount = 1000 }) => {
   const [sunPosition, setSunPosition] = useState([0, 15, 0])
 
   const panelPositions = useMemo(() => {
     if (panelNodes && panelNodes.length > 0) {
+      // 如果节点数量超过最大显示数量，进行采样
+      if (panelNodes.length > maxDisplayCount) {
+        const sampleRate = Math.ceil(panelNodes.length / maxDisplayCount)
+        return panelNodes.filter((_, idx) => idx % sampleRate === 0).slice(0, maxDisplayCount)
+      }
       return panelNodes
     }
     return buildDefaultPanels()
-  }, [panelNodes])
+  }, [panelNodes, maxDisplayCount])
 
   useFrame((state) => {
     // 模拟一天的时间（24小时周期）
@@ -214,15 +226,20 @@ const SolarArray = ({ panelNodes }) => {
     <>
       <Sun position={sunPosition} />
       
-      {panelPositions.map((pos) => (
-        <group key={pos.id}>
-          <PanelMount position={pos.mountPosition} />
-          <SolarPanel 
-            position={pos.panelPosition}
-            sunPosition={sunPosition}
-          />
-        </group>
-      ))}
+      {panelPositions.map((pos) => {
+        return (
+          <group key={pos.id}>
+            <PanelMount 
+              position={pos.panelPosition}
+              useFixedHeight={true}
+            />
+            <SolarPanel 
+              position={pos.panelPosition}
+              sunPosition={sunPosition}
+            />
+          </group>
+        )
+      })}
     </>
   )
 }
@@ -244,12 +261,12 @@ const Sky = () => {
 }
 
 // 主场景
-const Scene = ({ panelNodes }) => {
+const Scene = ({ panelNodes, maxDisplayCount }) => {
   return (
     <>
       <Sky />
       <GrassTerrain />
-      <SolarArray panelNodes={panelNodes} />
+      <SolarArray panelNodes={panelNodes} maxDisplayCount={maxDisplayCount} />
       <OrbitControls />
       <axesHelper args={[10]} />
     </>
@@ -262,6 +279,7 @@ const SolarPanel3D = () => {
   const [layoutInfo, setLayoutInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [maxDisplayCount, setMaxDisplayCount] = useState(1000) // 默认显示1000个
 
   useEffect(() => {
     const loadLayout = async () => {
@@ -273,30 +291,55 @@ const SolarPanel3D = () => {
         }
 
         const { bounds = {} } = data.metadata || {}
-        const centerX = ((bounds.min_x || 0) + (bounds.max_x || 0)) / 2
-        const centerY = ((bounds.min_y || 0) + (bounds.max_y || 0)) / 2
         const pilesFlat = data.tables.flatMap(table => table.piles || [])
         if (!pilesFlat.length) {
           throw new Error('地形数据缺少桩点信息')
         }
+        
+        // 计算实际数据范围
+        const actualMinX = Math.min(...pilesFlat.map(p => p.x))
+        const actualMaxX = Math.max(...pilesFlat.map(p => p.x))
+        const actualMinY = Math.min(...pilesFlat.map(p => p.y))
+        const actualMaxY = Math.max(...pilesFlat.map(p => p.y))
         const minGround = Math.min(...pilesFlat.map(pile => pile.z_ground ?? pile.z_top ?? 0))
+        
+        const centerX = (actualMinX + actualMaxX) / 2
+        const centerY = (actualMinY + actualMaxY) / 2
+        
+        // 计算数据范围并自适应缩放
+        const rangeX = actualMaxX - actualMinX
+        const rangeY = actualMaxY - actualMinY
+        const maxRange = Math.max(rangeX, rangeY, 1)
+        const targetSize = 80 // 目标显示尺寸（3D场景单位）
+        const scale = targetSize / maxRange
+        
+        const heightScale = 3.0  // 高度缩放：3倍夸张显示地形起伏
+        
+        console.log('SolarPanel3D 地形数据范围:', {
+          x: [actualMinX, actualMaxX],
+          y: [actualMinY, actualMaxY],
+          rangeX, rangeY,
+          scale,
+          totalPiles: pilesFlat.length
+        })
 
-        const scale = 0.05
-        const heightScale = 0.2
-
+        // 使用固定的杆子高度，让所有太阳能板看起来更统一
+        const fixedPoleHeight = 2.5  // 固定的支撑杆高度（3D单位）
+        
         const nodes = data.tables.flatMap((table) => {
           return table.piles.map((pile) => {
             const ground = pile.z_ground ?? pile.z_top ?? 0
-            const top = pile.z_top ?? ground
             const x = (pile.x - centerX) * scale
             const z = (pile.y - centerY) * scale
-            const mountHeight = (ground - minGround) * heightScale
-            const panelHeight = (top - ground) * heightScale + 1.2
+            // 地面高度（跟随地形起伏）
+            const groundHeight = (ground - minGround) * heightScale
+            // 太阳能板位置 = 地面高度 + 固定杆子高度
+            const panelY = groundHeight + fixedPoleHeight
 
             return {
               id: `${table.table_id}-${pile.index}`,
-              mountPosition: [x, mountHeight, z],
-              panelPosition: [x, mountHeight + panelHeight, z]
+              mountPosition: [x, groundHeight, z],
+              panelPosition: [x, panelY, z]
             }
           })
         })
@@ -325,7 +368,7 @@ const SolarPanel3D = () => {
         camera={{ position: [10, 5, 10], fov: 60 }}
         shadows
       >
-        <Scene panelNodes={panelNodes} />
+        <Scene panelNodes={panelNodes} maxDisplayCount={maxDisplayCount} />
       </Canvas>
       
       <div style={{
@@ -334,17 +377,21 @@ const SolarPanel3D = () => {
         left: 10,
         background: 'rgba(0,0,0,0.8)',
         color: 'white',
-        padding: '10px',
-        borderRadius: '5px',
-        fontSize: '12px'
+        padding: '12px',
+        borderRadius: '8px',
+        fontSize: '12px',
+        minWidth: '220px'
       }}>
-        <div>光伏板太阳跟踪演示</div>
-        {loading && <div>• 正在加载地形数据…</div>}
-        {error && <div>• 数据加载失败，使用演示场景</div>}
+        <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>🌞 光伏板太阳跟踪演示</div>
+        {loading && <div style={{ color: '#FFB74D' }}>• 正在加载地形数据…</div>}
+        {error && <div style={{ color: '#EF5350' }}>• 数据加载失败，使用演示场景</div>}
         {!loading && !error && layoutInfo && (
           <>
-            <div>• 真实地形行数：{layoutInfo.tableCount}</div>
-            <div>• 总桩点：{layoutInfo.pileCount}</div>
+            <div style={{ color: '#4CAF50' }}>• 真实地形行数：{layoutInfo.tableCount}</div>
+            <div style={{ color: '#4CAF50' }}>• 总桩点：{layoutInfo.pileCount}</div>
+            <div style={{ color: '#FFA726' }}>
+              • 当前显示：{Math.min(maxDisplayCount, panelNodes.length)} 个
+            </div>
           </>
         )}
         <div>• 东西向跟踪太阳</div>

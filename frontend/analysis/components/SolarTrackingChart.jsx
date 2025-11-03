@@ -1,23 +1,31 @@
 import React, { useState, useEffect } from 'react'
 import { Card, Typography, message } from 'antd'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import api from '../services/api'
+import api, { systemsApi } from '../services/api'
 
 const { Title, Text } = Typography
 
-// 从气象数据获取位置数据并计算太阳位置
+// 从PV系统获取位置数据并计算太阳位置
 const fetchSolarTrackingData = async () => {
   try {
-    // 1. 获取位置列表
-    const locations = await api.getLocations()
-    if (!locations || locations.length === 0) {
-      message.warning('未找到位置数据，使用默认位置计算')
-      return generateDefaultTrackingData()
-    }
+    // 1. 先尝试从光伏系统获取位置信息
+    const systems = await systemsApi.getSystems()
+    let latitude, longitude
     
-    // 使用第一个位置数据
-    const location = locations[0]
-    const { latitude, longitude } = location
+    if (systems && systems.length > 0) {
+      // 使用第一个系统的位置数据
+      latitude = systems[0].latitude
+      longitude = systems[0].longitude
+    } else {
+      // 如果没有系统，尝试从气象位置获取
+      const locations = await api.getLocations()
+      if (!locations || locations.length === 0) {
+        message.warning('未找到位置数据，使用默认位置计算')
+        return generateDefaultTrackingData()
+      }
+      latitude = locations[0].latitude
+      longitude = locations[0].longitude
+    }
     
     // 2. 获取当前日期
     const currentDate = new Date()
