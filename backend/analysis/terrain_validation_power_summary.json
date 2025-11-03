@@ -1,0 +1,42 @@
+{
+  "terrain_shading": {
+    "total_energy_kwh": 4.948184474252434,
+    "mean_shading_multiplier": 0.8390870434881613,
+    "mean_shading_multiplier_field": 0.5209718030943619,
+    "mean_shading_multiplier_row": 0.8390870434881613,
+    "daily_energy_kwh": {
+      "2024-01-15": 1.9560636804493239,
+      "2024-01-16": 1.5820279689474208,
+      "2024-01-17": 1.41009282485569
+    },
+    "daily_mean_shading_multiplier": {
+      "2024-01-15": 0.5204228137160688,
+      "2024-01-16": 0.5209654078218602,
+      "2024-01-17": 0.5215271877451565
+    },
+    "simulation_id": 15,
+    "runtime_seconds": 11.288391199996113,
+    "record_count": 72,
+    "relative_loss_pct": -36.60947299528269
+  },
+  "baseline_no_shading": {
+    "total_energy_kwh": 7.805873697633412,
+    "mean_shading_multiplier": 1.0,
+    "mean_shading_multiplier_field": 1.0,
+    "mean_shading_multiplier_row": null,
+    "daily_energy_kwh": {
+      "2024-01-15": 3.395245618949191,
+      "2024-01-16": 2.599507856299102,
+      "2024-01-17": 1.811120222385119
+    },
+    "daily_mean_shading_multiplier": {
+      "2024-01-15": 1.0,
+      "2024-01-16": 1.0,
+      "2024-01-17": 1.0
+    },
+    "simulation_id": 16,
+    "runtime_seconds": 5.585689699997602,
+    "record_count": 72,
+    "relative_loss_pct": 0.0
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "high": {
+    "table_ids": [
+      72,
+      188,
+      192
+    ],
+    "records": 183,
+    "table_count": 3,
+    "mean_shading_factor": 0.6904888876073436,
+    "median_shading_factor": 1.0,
+    "min_shading_factor": 0.0,
+    "max_shading_factor": 1.0,
+    "mean_shading_margin_deg": -0.5734596661585283,
+    "median_shading_margin_deg": 0.8016221284211937,
+    "weighted_mean_shading_factor": 0.6662320294998868
+  },
+  "low": {
+    "table_ids": [
+      22,
+      184,
+      214
+    ],
+    "records": 183,
+    "table_count": 3,
+    "mean_shading_factor": 0.9072202597745487,
+    "median_shading_factor": 1.0,
+    "min_shading_factor": 0.0,
+    "max_shading_factor": 1.0,
+    "mean_shading_margin_deg": 34.18195819158014,
+    "median_shading_margin_deg": 35.67635289889422,
+    "weighted_mean_shading_factor": 0.8973175621627731
+  },
+  "weighted_mean_shading_factor": 0.8390870434881611,
+  "total_table_count": 6,
+  "tables": {
+    "22": {
+      "group": "low",
+      "slope_deg": 0.01,
+      "records": 61,
+      "mean_shading_factor": 0.9222218245850233,
+      "median_shading_factor": 1.0,
+      "min_shading_factor": 0.0,
+      "max_shading_factor": 1.0,
+      "mean_shading_margin_deg": 33.22483580448611,
+      "span_length": 91.99910236426376,
+      "pile_count": 17.0
+    },
+    "72": {
+      "group": "high",
+      "slope_deg": 10.18,
+      "records": 61,
+      "mean_shading_factor": 0.8008395221179688,
+      "median_shading_factor": 1.0,
+      "min_shading_factor": 0.0,
+      "max_shading_factor": 1.0,
+      "mean_shading_margin_deg": 21.842874893187258,
+      "span_length": 13.408470457965377,
+      "pile_count": 3.0
+    },
+    "184": {
+      "group": "low",
+      "slope_deg": 0.01,
+      "records": 61,
+      "mean_shading_factor": 0.940779276553386,
+      "median_shading_factor": 1.0,
+      "min_shading_factor": 0.0,
+      "max_shading_factor": 1.0,
+      "mean_shading_margin_deg": 33.62762561269779,
+      "span_length": 29.10717396105394,
+      "pile_count": 5.0
+    },
+    "188": {
+      "group": "high",
+      "slope_deg": 8.28,
+      "records": 61,
+      "mean_shading_factor": 0.6393409411228578,
+      "median_shading_factor": 1.0,
+      "min_shading_factor": 0.0,
+      "max_shading_factor": 1.0,
+      "mean_shading_margin_deg": -19.96312599950979,
+      "span_length": 29.202952225793762,
+      "pile_count": 5.0
+    },
+    "192": {
+      "group": "high",
+      "slope_deg": 8.3,
+      "records": 61,
+      "mean_shading_factor": 0.6312861995812044,
+      "median_shading_factor": 1.0,
+      "min_shading_factor": 0.0,
+      "max_shading_factor": 1.0,
+      "mean_shading_margin_deg": -21.401334748104116,
+      "span_length": 29.17605394946662,
+      "pile_count": 5.0
+    },
+    "214": {
+      "group": "low",
+      "slope_deg": 0.01,
+      "records": 61,
+      "mean_shading_factor": 0.8586596781852368,
+      "median_shading_factor": 1.0,
+      "min_shading_factor": 0.0,
+      "max_shading_factor": 1.0,
+      "mean_shading_margin_deg": 35.69341315755652,
+      "span_length": 91.99203638178344,
+      "pile_count": 17.0
+    }
+  }
+}
