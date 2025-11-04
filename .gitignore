@@ -1,0 +1,78 @@
+# Node.js / NPM
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnpm-debug.log*
+
+# 前端构建输出
+frontend/dist/
+dist/
+build/
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+ENV/
+.venv/
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+pv_simulator.db
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 日志文件
+*.log
+logs/
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 测试覆盖率
+coverage/
+*.cover
+.coverage
+.pytest_cache/
+htmlcov/
+
+# 临时文件
+*.tmp
+*.bak
+*.cache
+.temp/
+temp/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# 分析和输出文件（根据您的项目结构）
+backend/analysis/
+terrain_output.txt
+
