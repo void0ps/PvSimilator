@@ -49,16 +49,21 @@ const fetchSolarTrackingData = async () => {
       const solarElevation = position.solar_elevation || 0
       const solarAzimuth = position.solar_azimuth || 0
       
-      // 单轴跟踪：光伏板倾角为0度，只进行方位角跟踪
-      // 计算光伏板跟踪角度（东西向水平跟踪）
-      const panelAzimuth = solarAzimuth > 180 ? solarAzimuth - 180 : solarAzimuth
-      const panelElevation = 0 // 光伏板倾角为0度
+      // 单轴跟踪：计算追踪器旋转角度
+      // 追踪器轴朝南（180°），计算相对于轴的旋转角度
+      const axisAzimuth = 180
+      const trackerAngle = Math.atan(
+        Math.tan(solarElevation * Math.PI / 180) * Math.sin((solarAzimuth - axisAzimuth) * Math.PI / 180)
+      ) * 180 / Math.PI
+      
+      // 限制在±60度内
+      const clampedTrackerAngle = Math.max(-60, Math.min(60, trackerAngle))
       
       return {
         time: `${hour.toString().padStart(2, '0')}:00`,
-        solarElevation: Math.max(0, solarElevation) + 90, // 角度加90度显示
-        panelAzimuth: panelAzimuth + 90, // 角度加90度显示
-        trackingError: Math.abs(solarAzimuth - panelAzimuth) // 跟踪误差
+        solarElevation: Math.max(0, solarElevation), // ✅ 移除错误的+90
+        trackerAngle: clampedTrackerAngle, // ✅ 使用正确的追踪角度
+        trackingError: Math.abs(trackerAngle - clampedTrackerAngle) // 跟踪误差（回溯限制）
       }
     })
     
@@ -95,15 +100,21 @@ const generateDefaultTrackingData = () => {
       Math.sin(latitude * Math.PI / 180) * Math.cos(hourAngle * Math.PI / 180)
     ) * 180 / Math.PI + 180
     
-    // 单轴跟踪：光伏板倾角为0度，只进行方位角跟踪
-    const panelAzimuth = solarAzimuth > 180 ? solarAzimuth - 180 : solarAzimuth
-    const panelElevation = 0 // 光伏板倾角为0度
+    // 单轴跟踪：计算追踪器旋转角度
+    // 追踪器轴朝南（180°），计算相对于轴的旋转角度
+    const axisAzimuth = 180
+    const trackerAngle = Math.atan(
+      Math.tan(solarElevation * Math.PI / 180) * Math.sin((solarAzimuth - axisAzimuth) * Math.PI / 180)
+    ) * 180 / Math.PI
+    
+    // 限制在±60度内
+    const clampedTrackerAngle = Math.max(-60, Math.min(60, trackerAngle))
     
     data.push({
       time: `${hour.toString().padStart(2, '0')}:00`,
-      solarElevation: Math.max(0, solarElevation) + 90, // 角度加90度显示
-      panelAzimuth: panelAzimuth + 90, // 角度加90度显示
-      trackingError: Math.abs(solarAzimuth - panelAzimuth) // 跟踪误差
+      solarElevation: Math.max(0, solarElevation), // ✅ 移除错误的+90
+      trackerAngle: clampedTrackerAngle, // ✅ 使用正确的追踪角度
+      trackingError: Math.abs(trackerAngle - clampedTrackerAngle) // 跟踪误差（回溯限制）
     })
   }
   
@@ -145,14 +156,14 @@ const SolarTrackingChart = () => {
             <XAxis dataKey="time" />
             <YAxis 
               label={{ value: '角度 (°)', angle: -90, position: 'insideLeft' }}
-              domain={[0, 'dataMax + 10']} // 从0度开始，不显示负值
+              domain={['dataMin - 10', 'dataMax + 10']} // ✅ 自动调整，支持负值
             />
             <Tooltip 
               formatter={(value, name) => [
                 `${parseFloat(value).toFixed(1)}°`, 
                 {
                   'solarElevation': '太阳高度角',
-                  'panelAzimuth': '光伏板跟踪角度'
+                  'trackerAngle': '光伏板跟踪角度'
                 }[name]
               ]}
             />
@@ -167,7 +178,7 @@ const SolarTrackingChart = () => {
             />
             <Line 
               type="monotone" 
-              dataKey="panelAzimuth" 
+              dataKey="trackerAngle" 
               stroke="#45b7d1" 
               strokeWidth={2}
               name="光伏板跟踪角度"
@@ -179,7 +190,7 @@ const SolarTrackingChart = () => {
       
       <div style={{ marginTop: '10px', fontSize: '10px', color: '#666' }}>
         <Text type="secondary">
-          单轴跟踪算法：光伏板进行东西向水平跟踪，倾角为0度（水平放置）
+          单轴跟踪算法：追踪器朝南安装，旋转角度范围±60°，根据太阳位置自动调整以最大化辐照
         </Text>
       </div>
     </Card>

@@ -11,7 +11,8 @@ const BacktrackingPlayer = ({
   isPlaying = false,
   playbackSpeed = 1.0,
   currentTimeIndex = 0,
-  onTimeIndexChange
+  onTimeIndexChange,
+  enableShadingHeatmap = true
 }) => {
   const [localTimeIndex, setLocalTimeIndex] = useState(currentTimeIndex)
 
@@ -41,33 +42,60 @@ const BacktrackingPlayer = ({
     }
   }, [localTimeIndex, onTimeIndexChange])
 
-  // 如果没有数据，不渲染
-  if (!backtrackingData || !terrainLayout || !terrainLayout.tables) {
+  // 如果没有地形数据，不渲染
+  if (!terrainLayout || !terrainLayout.tables) {
     return null
   }
 
-  const currentAngles = backtrackingData.angles ? backtrackingData.angles[localTimeIndex] : {}
-  const currentShadingFactors = backtrackingData.shadingFactors ? backtrackingData.shadingFactors[localTimeIndex] : {}
+  // 使用数据或默认值
+  const currentAngles = (backtrackingData && backtrackingData.angles) 
+    ? backtrackingData.angles[localTimeIndex] || {} 
+    : {}
+  const currentShadingFactors = (backtrackingData && backtrackingData.shadingFactors) 
+    ? backtrackingData.shadingFactors[localTimeIndex] || {} 
+    : {}
+
+  // 调试信息：检查有多少table被渲染
+  React.useEffect(() => {
+    if (terrainLayout && terrainLayout.tables) {
+      const totalTables = terrainLayout.tables.length
+      const tablesWithPiles = terrainLayout.tables.filter(t => t.piles && t.piles.length > 0).length
+      const tablesWithoutPiles = totalTables - tablesWithPiles
+      console.log(`[BacktrackingPlayer] 总跟踪器: ${totalTables}, 有桩位数据: ${tablesWithPiles}, 无桩位数据: ${tablesWithoutPiles}`)
+      
+      if (tablesWithoutPiles > 0) {
+        const emptyTableIds = terrainLayout.tables
+          .filter(t => !t.piles || t.piles.length === 0)
+          .map(t => t.table_id)
+        console.log(`[BacktrackingPlayer] 缺少桩位数据的跟踪器ID:`, emptyTableIds)
+      }
+    }
+  }, [terrainLayout])
 
   return (
     <>
       {terrainLayout.tables.map(table => {
-        if (!table.piles || table.piles.length === 0) return null
+        if (!table.piles || table.piles.length === 0) {
+          console.warn(`[BacktrackingPlayer] 跟踪器 ${table.table_id} 没有桩位数据，跳过渲染`)
+          return null
+        }
 
         // 计算行的中心位置
         const avgX = table.piles.reduce((sum, pile) => sum + pile.x, 0) / table.piles.length
         const avgY = table.piles.reduce((sum, pile) => sum + pile.y, 0) / table.piles.length
-        const avgZ = table.piles.reduce((sum, pile) => sum + (pile.z || 0), 0) / table.piles.length
+        const avgZ = table.piles.reduce((sum, pile) => sum + (pile.z_top || pile.z || 0), 0) / table.piles.length
 
         // 获取当前时刻的角度和遮挡因子
         const angle = currentAngles[table.table_id] || 0
         const shadingFactor = currentShadingFactors[table.table_id] || 1.0
 
-        // 计算行的方向（简化：假设沿X轴）
+        // 计算跟踪轴方位角（默认0度，即东西向）
         const axisAzimuth = table.axis_azimuth || 0
-
+        
         // 转换为Three.js坐标系（Y是高度）
-        const position = [avgX, avgZ + 1.5, avgY]
+        // avgZ 是地面高度，加上支撑杆高度（默认1.5米）得到太阳能板的高度
+        const panelHeight = avgZ + 1.5
+        const position = [avgX, panelHeight, avgY]
         
         // 旋转：Y轴旋转（方位角）+ Z轴旋转（跟踪角度）
         const rotation = [

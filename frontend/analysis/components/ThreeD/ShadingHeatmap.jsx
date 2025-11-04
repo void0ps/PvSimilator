@@ -36,17 +36,32 @@ const ShadingHeatmap = ({ tableId, position, rotation, shadingFactor = 1.0, dime
     return shadingFactor < 0.7 ? 0.3 : 0.1  // 遮挡严重时更明显
   }, [shadingFactor])
 
+  // 支撑杆高度
+  const poleHeight = position[1] - 0.5
+
   return (
-    <mesh position={position} rotation={rotation} castShadow>
-      <boxGeometry args={[dimensions.width, dimensions.height, dimensions.depth]} />
-      <meshStandardMaterial 
-        color={color}
-        emissive={color}
-        emissiveIntensity={emissiveIntensity}
-        metalness={0.7}
-        roughness={0.3}
-      />
-    </mesh>
+    <group>
+      {/* 支撑杆 */}
+      <mesh 
+        position={[position[0], position[1] - poleHeight / 2, position[2]]} 
+        castShadow
+      >
+        <cylinderGeometry args={[0.05, 0.05, poleHeight, 8]} />
+        <meshStandardMaterial color="#666666" />
+      </mesh>
+      
+      {/* 太阳能板 */}
+      <mesh position={position} rotation={rotation} castShadow>
+        <boxGeometry args={[dimensions.width, dimensions.height, dimensions.depth]} />
+        <meshStandardMaterial 
+          color={color}
+          emissive={color}
+          emissiveIntensity={emissiveIntensity}
+          metalness={0.7}
+          roughness={0.3}
+        />
+      </mesh>
+    </group>
   )
 }
 

@@ -1,6 +1,11 @@
 import os
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import Optional
+
+# 获取项目根目录
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DB_PATH = BASE_DIR / "pv_simulator.db"
 
 class Settings(BaseSettings):
     # 应用配置
@@ -9,7 +14,7 @@ class Settings(BaseSettings):
     debug: bool = os.getenv("DEBUG", "False").lower() == "true"
     
     # 数据库配置
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./pv_simulator.db")
+    database_url: str = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     
     # API配置
@@ -18,7 +23,7 @@ class Settings(BaseSettings):
     weather_api_key: Optional[str] = os.getenv("WEATHER_API_KEY")
     
     # 文件上传配置
-    upload_dir: str = os.getenv("UPLOAD_DIR", "./uploads")
+    upload_dir: str = os.getenv("UPLOAD_DIR", str(BASE_DIR / "uploads"))
     max_upload_size: int = int(os.getenv("MAX_UPLOAD_SIZE", "10485760"))
     
     # CORS配置

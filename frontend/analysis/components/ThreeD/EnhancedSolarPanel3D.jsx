@@ -45,32 +45,49 @@ const EnhancedSolarPanel3D = ({
     loadTerrainData()
   }, [])
 
-  // 加载回溯数据（如果提供了simulationId）
+  // 加载回溯数据（如果提供了simulationId或需要默认数据）
   useEffect(() => {
-    if (!simulationId) return
-
     const loadBacktrackingData = async () => {
       try {
-        // TODO: 调用实际的API获取回溯数据
-        // const data = await simulationApi.getShadingData(simulationId)
+        if (simulationId) {
+          // TODO: 调用实际的API获取回溯数据
+          // const data = await simulationApi.getShadingData(simulationId)
+        }
         
-        // 临时模拟数据
+        // 生成完整的模拟数据，覆盖所有跟踪器
+        if (!terrainData || !terrainData.tables) {
+          return
+        }
+
+        const tableIds = terrainData.tables.map(t => t.table_id)
+        const timestamps = [
+          '2024-01-15T06:00:00', 
+          '2024-01-15T09:00:00', 
+          '2024-01-15T12:00:00', 
+          '2024-01-15T15:00:00', 
+          '2024-01-15T18:00:00'
+        ]
+        const anglesSequence = [-45, -20, 0, 20, 45]
+        
         const mockData = {
-          timestamps: ['2024-01-15T06:00:00', '2024-01-15T09:00:00', '2024-01-15T12:00:00', '2024-01-15T15:00:00', '2024-01-15T18:00:00'],
-          angles: [
-            { 1: -45, 2: -45, 3: -45 },
-            { 1: -20, 2: -20, 3: -20 },
-            { 1: 0, 2: 0, 3: 0 },
-            { 1: 20, 2: 20, 3: 20 },
-            { 1: 45, 2: 45, 3: 45 }
-          ],
-          shadingFactors: [
-            { 1: 0.75, 2: 0.80, 3: 0.85 },
-            { 1: 0.90, 2: 0.92, 3: 0.95 },
-            { 1: 0.98, 2: 0.99, 3: 1.00 },
-            { 1: 0.90, 2: 0.92, 3: 0.95 },
-            { 1: 0.75, 2: 0.80, 3: 0.85 }
-          ]
+          timestamps,
+          angles: anglesSequence.map(angle => {
+            const angleMap = {}
+            tableIds.forEach(id => {
+              angleMap[id] = angle
+            })
+            return angleMap
+          }),
+          shadingFactors: timestamps.map((_, timeIdx) => {
+            const factorMap = {}
+            tableIds.forEach((id, idx) => {
+              // 根据位置和时间生成不同的遮挡因子
+              const baseFactor = 0.75 + Math.random() * 0.25  // 0.75 - 1.0
+              const timeFactor = timeIdx === 2 ? 1.0 : 0.85 + Math.random() * 0.15  // 正午最好
+              factorMap[id] = Math.min(baseFactor * timeFactor, 1.0)
+            })
+            return factorMap
+          })
         }
         
         setBacktrackingData(mockData)
@@ -79,8 +96,10 @@ const EnhancedSolarPanel3D = ({
       }
     }
 
-    loadBacktrackingData()
-  }, [simulationId])
+    if (terrainData) {
+      loadBacktrackingData()
+    }
+  }, [simulationId, terrainData])
 
   // 播放控制
   const handlePlayPause = () => {
@@ -172,7 +191,7 @@ const EnhancedSolarPanel3D = ({
         />
 
         {/* 回溯播放器（显示跟踪器和遮挡热力图）*/}
-        {enableShadingHeatmap && backtrackingData && (
+        {terrainData && (
           <BacktrackingPlayer
             backtrackingData={backtrackingData}
             terrainLayout={terrainData}
@@ -180,6 +199,7 @@ const EnhancedSolarPanel3D = ({
             playbackSpeed={playbackSpeed}
             currentTimeIndex={currentTimeIndex}
             onTimeIndexChange={setCurrentTimeIndex}
+            enableShadingHeatmap={enableShadingHeatmap}
           />
         )}
 

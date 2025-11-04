@@ -15,7 +15,294 @@ const getTerrainHeight = (x, z) => {
   return slopeHeight + hillHeight
 }
 
-// 论文算法实现：Terrain-Aware Backtracking
+// ✅ 追踪器Table组件（计算旋转角度，传递给每个module）
+const TrackerTable = ({
+  tableId,
+  modules = [],
+  sunPosition,
+  showDetails,
+  currentTime,
+  useRealTerrain,
+  enableBacktracking,
+  rowPitch,
+  moduleWidth,
+  allTables = []  // ✅ 新增：所有table数据，用于地形感知回溯
+}) => {
+  const rotationAngleRef = useRef(0)  // 当前旋转角度（弧度）
+  
+  // 组件挂载（调试日志已禁用）
+  // useEffect(() => {
+  //   console.log(`✅ TrackerTable挂载: tableId=${tableId}, modules=${modules.length}个`)
+  // }, [])
+  
+  // 计算table中心位置和范围
+  const { centerPos, minPos, maxPos, axisLength, axisDirection } = useMemo(() => {
+    if (modules.length === 0) return { 
+      centerPos: [0, 0, 0], 
+      minPos: [0, 0, 0], 
+      maxPos: [0, 0, 0],
+      axisLength: 0,
+      axisDirection: 'x'
+    }
+    
+    let sumX = 0, sumY = 0, sumZ = 0
+    let minX = Infinity, minY = Infinity, minZ = Infinity
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+    
+    modules.forEach(m => {
+      const pos = m.position || m
+      sumX += pos[0]
+      sumY += pos[1]
+      sumZ += pos[2]
+      minX = Math.min(minX, pos[0])
+      minY = Math.min(minY, pos[1])
+      minZ = Math.min(minZ, pos[2])
+      maxX = Math.max(maxX, pos[0])
+      maxY = Math.max(maxY, pos[1])
+      maxZ = Math.max(maxZ, pos[2])
+    })
+    
+    // 判断table的主要排列方向（X还是Z）
+    const spanX = maxX - minX
+    const spanZ = maxZ - minZ
+    const axisDirection = spanX > spanZ ? 'x' : 'z'
+    const axisLength = Math.max(spanX, spanZ, 1.0)
+    
+    return {
+      centerPos: [sumX / modules.length, sumY / modules.length, sumZ / modules.length],
+      minPos: [minX, minY, minZ],
+      maxPos: [maxX, maxY, maxZ],
+      axisLength,
+      axisDirection
+    }
+  }, [modules])
+  
+  // ✅ 在Table级别计算统一的旋转角度
+  useFrame(() => {
+    if (sunPosition && currentTime !== undefined) {
+      const sunHeight = sunPosition[1]
+      
+      // ⚠️ 降低太阳高度阈值，确保能触发旋转
+      if (sunHeight > 1) {
+        const sunX = sunPosition[0]
+        const sunZ = sunPosition[2]
+        
+        // 统一的太阳角度计算
+        const horizontalDist = Math.sqrt(sunX * sunX + sunZ * sunZ) || 0.01
+        const solarElevation = Math.atan2(sunHeight, horizontalDist) * (180 / Math.PI)
+        const solarAzimuth = Math.atan2(sunX, sunZ) * (180 / Math.PI)
+        
+        // 追踪器参数（论文标准参数）
+        const axisAzimuth = 180 // 南北轴（追踪轴方位角）
+        const axisTilt = 0 // 追踪轴倾斜角（假设水平）
+        const gcr = Math.min(Math.max(moduleWidth / rowPitch, 0.05), 0.9)
+        
+        // ✅ 论文算法：单轴追踪器理想角度计算
+        // 参考：pvlib singleaxis tracker algorithm
+        // tracker_theta = arctan(tan(solar_elevation) * sin(solar_azimuth - axis_azimuth))
+        const solarElevationRad = solarElevation * Math.PI / 180
+        const azimuthDiff = (solarAzimuth - axisAzimuth) * Math.PI / 180
+        
+        let idealTrackerAngle = Math.atan(
+          Math.tan(solarElevationRad) * Math.sin(azimuthDiff)
+        ) * (180 / Math.PI)
+        
+        if (!isFinite(idealTrackerAngle)) {
+          idealTrackerAngle = 0
+        }
+        
+        // 标准回溯角度计算（基于GCR，避免行间遮挡）
+        let backtrackAngle = Math.atan2(
+          Math.sin(solarElevationRad) * Math.cos(azimuthDiff),
+          (1 - gcr) / gcr + Math.cos(solarElevationRad)
+        ) * (180 / Math.PI)
+        
+        // 🌄 地形感知回溯（Terrain-Aware Backtracking）
+        if (enableBacktracking && allTables.length > 0) {
+          // 计算当前排的平均高度
+          const myHeight = centerPos[1]
+          
+          // 找到相邻排（前后10米范围内）
+          const neighborDistance = 15
+          const neighbors = allTables.filter(otherTable => {
+            if (otherTable.tableId === tableId) return false
+            const otherCenter = otherTable.centerPos
+            if (!otherCenter) return false
+            
+            const dx = otherCenter[0] - centerPos[0]
+            const dz = otherCenter[2] - centerPos[2]
+            const distance = Math.sqrt(dx * dx + dz * dz)
+            
+            return distance < neighborDistance
+          })
+          
+          // 计算遮挡风险
+          let maxShadingRisk = 0
+          for (const neighbor of neighbors) {
+            const heightDiff = neighbor.centerPos[1] - myHeight
+            const dx = neighbor.centerPos[0] - centerPos[0]
+            const dz = neighbor.centerPos[2] - centerPos[2]
+            const horizontalDist = Math.sqrt(dx * dx + dz * dz)
+            
+            if (horizontalDist < 0.1) continue
+            
+            // 计算邻居方向
+            const neighborAngle = Math.atan2(dx, dz) * (180 / Math.PI)
+            const sunDirection = solarAzimuth
+            const angleDiff = Math.abs(neighborAngle - sunDirection)
+            
+            // 如果邻居在太阳方向（±45度内）且更高，有遮挡风险
+            if (angleDiff < 45 && heightDiff > 0) {
+              // 计算遮挡角度
+              const blockingAngle = Math.atan2(heightDiff, horizontalDist) * (180 / Math.PI)
+              maxShadingRisk = Math.max(maxShadingRisk, blockingAngle)
+            }
+          }
+          
+          // 根据遮挡风险调整回溯角度
+          if (maxShadingRisk > 0) {
+            // 降低回溯角度以避免被遮挡
+            backtrackAngle = backtrackAngle - maxShadingRisk * 0.5
+          }
+        }
+        
+        // 应用回溯限制：取理想角度和回溯角度中较小的（绝对值）
+        let targetAngle = Math.abs(idealTrackerAngle) < Math.abs(backtrackAngle) 
+          ? idealTrackerAngle 
+          : backtrackAngle
+        
+        // 物理限制：最大旋转角度
+        const MAX_ANGLE = 60  // 单轴追踪器典型最大角度±60度
+        targetAngle = Math.max(-MAX_ANGLE, Math.min(MAX_ANGLE, targetAngle))
+        
+        // 平滑旋转
+        const targetRadians = targetAngle * (Math.PI / 180)
+        const currentRotation = rotationAngleRef.current
+        const newRotation = THREE.MathUtils.lerp(currentRotation, targetRadians, 0.08)
+        rotationAngleRef.current = newRotation
+        
+        // 🔍 每2秒打印一次论文算法的关键参数（只打印前3个table）
+        if (Math.random() < 0.01 && parseInt(tableId.toString().split('_').pop()) < 3) {
+          const logData = {
+            'Table': tableId,
+            '高度': centerPos[1].toFixed(1) + 'm',
+            '太阳高度角': solarElevation.toFixed(1) + '°',
+            '太阳方位角': solarAzimuth.toFixed(1) + '°',
+            '理想追踪角': idealTrackerAngle.toFixed(1) + '°',
+            '回溯角度': backtrackAngle.toFixed(1) + '°',
+            '最终角度': targetAngle.toFixed(1) + '°',
+            '当前旋转': (newRotation * 180 / Math.PI).toFixed(1) + '°',
+            'GCR': gcr.toFixed(2),
+          }
+          
+          // 如果启用了地形感知回溯，显示额外信息
+          if (enableBacktracking && allTables.length > 0) {
+            const myHeight = centerPos[1]
+            const neighbors = allTables.filter(t => t.tableId !== tableId).slice(0, 3)
+            const heightDiffs = neighbors.map(n => (n.centerPos[1] - myHeight).toFixed(1))
+            logData['邻居高差'] = heightDiffs.join(', ') + 'm'
+          }
+          
+          console.log('📐 地形感知回溯:', logData)
+        }
+      } else {
+        // 夜间回归水平（快速复位）
+        const currentRotation = rotationAngleRef.current
+        rotationAngleRef.current = THREE.MathUtils.lerp(currentRotation, 0, 0.02)
+      }
+    }
+  })
+  
+  return (
+    <>
+      {/* 渲染各个module，传递旋转角度ref */}
+      {modules.map((module) => {
+        const pos = module.position || module
+        const showPole = module.showPole !== undefined ? module.showPole : true
+        
+        return (
+          <SolarPanelStatic
+            key={module.idx}
+            position={pos}
+            showDetails={showDetails}
+            useRealTerrain={useRealTerrain}
+            moduleWidth={moduleWidth}
+            showPole={showPole}
+            rotationAngleRef={rotationAngleRef}  // ✅ 传递旋转角度ref
+          />
+        )
+      })}
+    </>
+  )
+}
+
+// ✅ 静态光伏板组件（只旋转太阳能板，支撑杆保持垂直）
+const SolarPanelStatic = ({
+  position,
+  showDetails,
+  useRealTerrain,
+  moduleWidth,
+  showPole,
+  rotationAngleRef  // ✅ 接收旋转角度ref
+}) => {
+  const panelRef = useRef()
+  
+  // 计算支撑杆高度
+  let totalPoleHeight = 3.5
+  let actualGroundY = -2
+  
+  if (useRealTerrain) {
+    const fixedPoleHeight = 6.0
+    totalPoleHeight = fixedPoleHeight
+    actualGroundY = position[1] - fixedPoleHeight
+  } else {
+    const groundY = -1
+    const terrainHeight = getTerrainHeight(position[0], position[2])
+    actualGroundY = groundY + terrainHeight
+    totalPoleHeight = position[1] - actualGroundY
+  }
+  
+  // 直接应用旋转（每帧更新）
+  useFrame(() => {
+    if (panelRef.current && rotationAngleRef) {
+      panelRef.current.rotation.y = rotationAngleRef.current
+    }
+  })
+  
+  return (
+    <>
+      {/* 支撑杆 - 保持垂直，不旋转 */}
+      {showDetails && showPole && (
+        <mesh position={[position[0], actualGroundY + totalPoleHeight / 2, position[2]]}>
+          <cylinderGeometry args={[0.04, 0.04, totalPoleHeight, 6]} />
+          <meshStandardMaterial 
+            color="#4a4a4a" 
+            metalness={0.6}
+            roughness={0.4}
+          />
+        </mesh>
+      )}
+      
+      {/* 光伏板 - 围绕Y轴旋转 */}
+      <mesh 
+        ref={panelRef}
+        position={position} 
+        castShadow 
+        receiveShadow
+      >
+        <boxGeometry args={[moduleWidth, 0.05, moduleWidth * 1.2]} />
+        <meshStandardMaterial 
+          color="#1a3a5c"  // 深蓝色（真实光伏板颜色）
+          metalness={0.3} 
+          roughness={0.4}
+          envMapIntensity={0.5}
+        />
+      </mesh>
+    </>
+  )
+}
+
+// 论文算法实现：Terrain-Aware Backtracking（保留用于兼容）
 const SolarPanel = ({
   position,
   sunPosition,
@@ -25,8 +312,9 @@ const SolarPanel = ({
   neighbors = [],
   enableBacktracking = true,
   rowPitch = 3.0, // 行间距（米）
-  moduleWidth = 2.0, // 组件宽度（米）
-  showPole = false // 是否显示支撑杆（只在桩位显示）
+  moduleWidth = 0.95, // 组件宽度（米）- 根据实际数据验证约0.91-1.03米
+  showPole = false, // 是否显示支撑杆（只在桩位显示）
+  tableId = null // ✅ 新增：跟踪器ID，同一table的组件共享旋转角度
 }) => {
   const meshRef = useRef()
   const lastValidRotation = useRef(0)
@@ -37,7 +325,7 @@ const SolarPanel = ({
   let actualGroundY, totalPoleHeight
   
   if (useRealTerrain) {
-    const fixedPoleHeight = 3.5 // 增加到3.5米防止嵌入
+    const fixedPoleHeight = 6.0 // ✅ 增加到6米（防止嵌入地形）
     totalPoleHeight = fixedPoleHeight
     actualGroundY = position[1] - fixedPoleHeight
   } else {
@@ -56,18 +344,20 @@ const SolarPanel = ({
     if (meshRef.current && sunPosition && currentTime !== undefined) {
       const sunHeight = sunPosition[1]
       
+      // 从position提取面板位置（用于邻居遮挡计算）
+      const panelX = position[0]
+      const panelZ = position[2]
+      
       if (sunHeight > 5) {
         const sunX = sunPosition[0]
         const sunZ = sunPosition[2]
-        const panelX = position[0]
-        const panelZ = position[2]
         
-        const dx = sunX - panelX
-        const dz = sunZ - panelZ
-        const horizontalDist = Math.sqrt(dx * dx + dz * dz)
+        // ✅ 修复：使用太阳位置计算统一的方位角，不基于组件位置
+        // 单轴追踪器的所有组件应该共享同一个旋转角度
+        const horizontalDist = Math.sqrt(sunX * sunX + sunZ * sunZ) || 0.01
         
         // 1. 计算太阳高度角和方位角（度）
-        const solarElevation = Math.atan2(sunHeight - position[1], horizontalDist) * (180 / Math.PI)
+        const solarElevation = Math.atan2(sunHeight, horizontalDist) * (180 / Math.PI)
         const solarAzimuth = Math.atan2(sunX, sunZ) * (180 / Math.PI)
         
         // 2. 计算基准追踪角度（pvlib singleaxis简化版）
@@ -78,8 +368,16 @@ const SolarPanel = ({
         // GCR计算（Ground Coverage Ratio）
         const gcr = Math.min(Math.max(moduleWidth / rowPitch, 0.05), 0.9)
         
-        // 理想追踪角度（未考虑遮挡）
-        let idealTrackerAngle = Math.atan2(dx, dz) * (180 / Math.PI)
+        // ✅ 理想追踪角度：基于太阳方位角，所有组件使用相同角度
+        // 单轴追踪器围绕南北轴旋转，追踪东西方向的太阳
+        const tanElevation = Math.tan(solarElevation * Math.PI / 180)
+        const sinAzimuth = Math.sin((solarAzimuth - axisAzimuth) * Math.PI / 180)
+        let idealTrackerAngle = Math.atan(tanElevation * sinAzimuth) * (180 / Math.PI)
+        
+        // 安全检查：确保角度是有效数值
+        if (!isFinite(idealTrackerAngle)) {
+          idealTrackerAngle = 0
+        }
         
         // 标准回溯角度计算（根据GCR）
         const backtrackAngle = Math.atan2(
@@ -218,7 +516,7 @@ const SolarPanel = ({
       
       {/* 简化光伏板 - 保持算法精度，降低渲染负担 */}
       <mesh position={[0, 0, 0]} castShadow receiveShadow>
-        <boxGeometry args={[moduleWidth, 0.05, 1.2]} />
+        <boxGeometry args={[moduleWidth, 0.05, moduleWidth * 1.2]} />
         <meshStandardMaterial 
           color="#1a1a2e" 
           metalness={0.6} 
@@ -226,8 +524,8 @@ const SolarPanel = ({
         />
       </mesh>
       
-      {/* 论文算法可视化：遮挡裕度指示器 */}
-      {enableBacktracking && (
+      {/* 论文算法可视化：遮挡裕度指示器 - 已隐藏 */}
+      {false && enableBacktracking && (
         <mesh ref={shadingIndicatorRef} position={[0, 0.08, 0]}>
           <sphereGeometry args={[0.1, 12, 12]} />
           <meshStandardMaterial 
@@ -253,15 +551,15 @@ const TerrainWithRealData = ({ realTerrainData }) => {
     console.log('开始构建真实地形网格，数据点数:', realTerrainData.length)
 
     const pointMap = new Map()
-    const POLE_HEIGHT = 3.5 // 增加到3.5米，与太阳能板位置计算保持一致
+    const POLE_HEIGHT = 6.0 // ✅ 增加到6米，防止太阳能板陷入地形
     
     // 为每个太阳能板位置创建地面点
     for (const item of realTerrainData) {
       const pos = item.position || item // 兼容新旧数据结构
       const [x, panelY, z] = pos
       
-      // 地面高度 = 太阳能板Y坐标 - 支撑杆高度
-      const groundY = panelY - POLE_HEIGHT
+    // 地面高度 = 太阳能板Y坐标 - 支撑杆高度（6米）
+    const groundY = panelY - POLE_HEIGHT
       
       // 在太阳能板位置精确添加地面点（不聚合）
       const key = `${x.toFixed(3)}_${z.toFixed(3)}`
@@ -344,7 +642,7 @@ const TerrainWithRealData = ({ realTerrainData }) => {
       扩展后范围: { x: [expandedMinX.toFixed(2), expandedMaxX.toFixed(2)], z: [expandedMinZ.toFixed(2), expandedMaxZ.toFixed(2)] }
     })
     
-    console.log('💡 提示：太阳能板高度 = 地面高度 + 3.5米支撑杆')
+    console.log('💡 提示：太阳能板高度 = 地面高度 + 5.5米支撑杆（防止陷入地形）')
 
     const coords2D = points.map((p) => [p.x, p.z])
 
@@ -545,20 +843,83 @@ const SolarArray = ({
   realTerrainData, 
   currentTime, 
   maxDisplayCount = 500,
-  enableBacktracking = true 
+  enableBacktracking = true,
+  renderScale = 1.0  // ✅ 接收渲染缩放比例
 }) => {
   const useRealTerrain = realTerrainData && realTerrainData.length > 0
   
   const positions = useMemo(() => {
-    // 如果有真实地形数据，进行均匀采样
+    // 如果有真实地形数据，进行智能采样
     if (realTerrainData && realTerrainData.length > 0) {
       const targetCount = Math.min(maxDisplayCount, realTerrainData.length)
-      const sampleRate = Math.max(1, Math.floor(realTerrainData.length / targetCount))
-      const sampled = realTerrainData.filter((_, idx) => idx % sampleRate === 0).slice(0, targetCount)
+      
+      // 🎯 改进采样策略：按跟踪器排分组，优先保留有杆子的组件
+      // 将组件按 tableId 分组
+      const groupsByTable = {}
+      realTerrainData.forEach(item => {
+        const tableId = item.tableId || 'unknown'
+        if (!groupsByTable[tableId]) {
+          groupsByTable[tableId] = []
+        }
+        groupsByTable[tableId].push(item)
+      })
+      
+      const tableIds = Object.keys(groupsByTable)
+      const tableCount = tableIds.length
+      
+      // ✅ 改进：确保每排显示足够组件呈现真实效果
+      const minModulesPerTable = 5   // 最少5个
+      const maxModulesPerTable = 15  // 最多15个
+      let modulesPerTable = Math.max(minModulesPerTable, Math.floor(targetCount / tableCount))
+      modulesPerTable = Math.min(modulesPerTable, maxModulesPerTable)
+      
+      const sampled = []
+      tableIds.forEach(tableId => {
+        const tableModules = groupsByTable[tableId]
+        if (tableModules.length === 0) return
+        
+        // ✅ 关键修复：优先选择有杆子的组件
+        const withPoles = tableModules.filter(m => m.showPole)
+        const withoutPoles = tableModules.filter(m => !m.showPole)
+        
+        if (tableModules.length <= modulesPerTable) {
+          // 如果这排组件数少于等于配额，全部显示
+          sampled.push(...tableModules)
+        } else {
+          // 1. 先选择所有有杆子的组件（支撑结构必须显示）
+          const selected = [...withPoles]
+          
+          // 2. 如果有杆子的组件数量已经满足配额，直接使用
+          if (selected.length >= modulesPerTable) {
+            sampled.push(...selected.slice(0, modulesPerTable))
+          } else {
+            // 3. 如果还有配额，从没有杆子的组件中均匀采样补充
+            const remaining = modulesPerTable - selected.length
+            if (withoutPoles.length > 0 && remaining > 0) {
+              const sampleRate = Math.max(1, Math.floor(withoutPoles.length / remaining))
+              const additionalSampled = withoutPoles.filter((_, idx) => idx % sampleRate === 0).slice(0, remaining)
+              selected.push(...additionalSampled)
+            }
+            sampled.push(...selected)
+          }
+        }
+      })
+      
+      // 如果还没达到目标数量，从剩余的组件中补充
+      if (sampled.length < targetCount) {
+        const remaining = realTerrainData.filter(item => !sampled.includes(item))
+        const needed = targetCount - sampled.length
+        const extraSampleRate = Math.max(1, Math.floor(remaining.length / needed))
+        const extra = remaining.filter((_, idx) => idx % extraSampleRate === 0).slice(0, needed)
+        sampled.push(...extra)
+      }
+      
+      // 限制最终数量
+      const finalSampled = sampled.slice(0, targetCount)
       
       // 🔧 减少支撑杆显示：采样后，进一步减少支撑杆（只保留1/3的支撑杆）
       const polesReductionRate = 3
-      const sampledWithReducedPoles = sampled.map((item, idx) => {
+      const sampledWithReducedPoles = finalSampled.map((item, idx) => {
         if (item.showPole && idx % polesReductionRate !== 0) {
           return { ...item, showPole: false }
         }
@@ -567,12 +928,13 @@ const SolarArray = ({
       
       const totalPolesAfterReduction = sampledWithReducedPoles.filter(item => item.showPole).length
       
-      console.log('✅ 企业真实数据采样:', { 
-        企业总组件数: realTerrainData.length,
-        采样率: `每${sampleRate}个取1个`,
-        当前显示: sampled.length,
-        支撑杆优化: `${totalPolesAfterReduction}个（进一步精简）`,
-        说明: '100%企业真实数据，均匀采样显示'
+      console.log('Smart Sampling Result:', { 
+        totalModules: realTerrainData.length,
+        totalTables: tableCount,
+        modulesPerTable: modulesPerTable,
+        displayed: finalSampled.length,
+        polesShown: totalPolesAfterReduction,
+        strategy: 'Per-table uniform sampling ensures all tables visible'
       })
       
       return sampledWithReducedPoles
@@ -642,28 +1004,66 @@ const SolarArray = ({
     return map
   }, [positions, enableBacktracking])
   
+  // ✅ 按tableId分组（同一table的module应该一起旋转）
+  const groupedByTable = useMemo(() => {
+    const groups = {}
+    
+    positions.forEach((item, idx) => {
+      const tableId = item.tableId || `default_table`
+      if (!groups[tableId]) {
+        groups[tableId] = []
+      }
+      groups[tableId].push({
+        ...item,
+        idx,
+        neighbors: neighborsMap[idx] || []
+      })
+    })
+    
+    return groups
+  }, [positions, neighborsMap])
+  
+  // 🌄 计算每个table的中心位置（用于地形感知回溯）
+  const tablesWithCenters = useMemo(() => {
+    return Object.entries(groupedByTable).map(([tableId, modules]) => {
+      // 计算中心位置
+      let sumX = 0, sumY = 0, sumZ = 0
+      modules.forEach(m => {
+        const pos = m.position || m
+        sumX += pos[0]
+        sumY += pos[1]
+        sumZ += pos[2]
+      })
+      
+      return {
+        tableId,
+        centerPos: [
+          sumX / modules.length,
+          sumY / modules.length,
+          sumZ / modules.length
+        ],
+        modules
+      }
+    })
+  }, [groupedByTable])
+  
   return (
     <>
-      {positions.map((item, idx) => {
-        const pos = item.position || item // 兼容新旧数据结构
-        const showPole = item.showPole !== undefined ? item.showPole : true // 默认显示支撑杆
-        
-        return (
-        <SolarPanel 
-          key={idx} 
-          position={pos} 
+      {tablesWithCenters.map(({ tableId, modules }) => (
+        <TrackerTable
+          key={tableId}
+          tableId={tableId}
+          modules={modules}
           sunPosition={sunPosition}
           showDetails={showDetails}
           currentTime={currentTime}
           useRealTerrain={useRealTerrain}
-            neighbors={neighborsMap[idx] || []}
-            enableBacktracking={enableBacktracking}
-            rowPitch={3.0}
-            moduleWidth={2.0}
-            showPole={showPole}
+          enableBacktracking={enableBacktracking}
+          rowPitch={3.0}
+          moduleWidth={0.95 * renderScale}
+          allTables={tablesWithCenters}  // ✅ 传递所有table的信息
         />
-        )
-      })}
+      ))}
     </>
   )
 }
@@ -674,20 +1074,20 @@ const SceneController = ({ sunPosition, setSunPosition, timeOfDay, setTimeOfDay 
   
   useFrame((state) => {
     if (!timeOfDay.paused) {
-      const dayDuration = 60 // 改为60秒一天，更慢更平滑
+      const dayDuration = 30 // 30秒一天，旋转更明显
       const time = (state.clock.getElapsedTime() % dayDuration) / dayDuration
       setTimeOfDay({ ...timeOfDay, value: time })
       
-      // 计算目标太阳位置（太阳从东到西移动）
-      const targetSunX = (time - 0.5) * 50  // 东西方向移动范围 -25到+25
-      const targetSunHeight = Math.sin(time * Math.PI) * 30 + 10  // 高度：最低10，最高40
-      const targetSunZ = 15  // 固定在南侧，确保从相机方向照过来
+      // 计算目标太阳位置（太阳从东到西移动）- 增大移动范围让旋转更明显
+      const targetSunX = (time - 0.5) * 200  // 东西方向移动范围 -100到+100（增大4倍）
+      const targetSunHeight = Math.sin(time * Math.PI) * 40 + 20  // 高度：最低20，最高60（提高高度）
+      const targetSunZ = 30  // 固定在南侧，增加距离让角度变化更明显
       
-      // 平滑插值太阳位置（避免突然跳变）
+      // 平滑插值太阳位置（加快速度，旋转更明显）
       const currentSun = lastSunPosition.current
-      const smoothSunX = THREE.MathUtils.lerp(currentSun[0], targetSunX, 0.05)
-      const smoothSunHeight = THREE.MathUtils.lerp(currentSun[1], targetSunHeight, 0.05)
-      const smoothSunZ = THREE.MathUtils.lerp(currentSun[2], targetSunZ, 0.05)
+      const smoothSunX = THREE.MathUtils.lerp(currentSun[0], targetSunX, 0.15)  // 提高速度
+      const smoothSunHeight = THREE.MathUtils.lerp(currentSun[1], targetSunHeight, 0.15)
+      const smoothSunZ = THREE.MathUtils.lerp(currentSun[2], targetSunZ, 0.15)
       
       const newSunPosition = [smoothSunX, smoothSunHeight, smoothSunZ]
       setSunPosition(newSunPosition)
@@ -709,7 +1109,9 @@ const Scene = ({
   showDetails, 
   realTerrainData, 
   maxDisplayCount,
-  enableBacktracking = true 
+  enableBacktracking = true,
+  renderScale = 1.0,  // ✅ 接收渲染缩放比例
+  lockView = false  // ✅ 锁定视角状态
 }) => {
   const hasRealData = realTerrainData && realTerrainData.length > 0
   
@@ -753,6 +1155,7 @@ const Scene = ({
         currentTime={timeOfDay.value}
         maxDisplayCount={maxDisplayCount}
         enableBacktracking={enableBacktracking}
+        renderScale={renderScale}  // ✅ 传递渲染缩放比例
       />
       
       {/* 场景控制 */}
@@ -763,15 +1166,17 @@ const Scene = ({
         setTimeOfDay={setTimeOfDay}
       />
       
-      {/* 相机控制 */}
-      <OrbitControls 
-        enableDamping
-        dampingFactor={0.05}
-        minDistance={10}
-        maxDistance={100}
-        maxPolarAngle={Math.PI / 2.1}
-        target={[0, 0, 0]}
-      />
+      {/* 相机控制 - 锁定视角时禁用所有操作 */}
+      {!lockView && (
+        <OrbitControls 
+          enableDamping
+          dampingFactor={0.05}
+          minDistance={10}
+          maxDistance={100}
+          maxPolarAngle={Math.PI / 2.1}
+          target={[0, 0, 0]}
+        />
+      )}
       
       {/* 坐标轴（可选） */}
       {showDetails && <axesHelper args={[10]} />}
@@ -790,8 +1195,11 @@ const SolarPanel3D_Lite = () => {
   const [realTerrainData, setRealTerrainData] = useState([])
   const [loading, setLoading] = useState(true)
   const [terrainInfo, setTerrainInfo] = useState({ tableCount: 403, pileCount: 3779, moduleCount: 0, moduleStats: {} })
-  const [maxDisplayCount, setMaxDisplayCount] = useState(150) // 新增：控制最大显示数量（默认150个，保持清晰视野）
+  const [maxDisplayCount, setMaxDisplayCount] = useState(2000) // 降低到2000个，避免WebGL崩溃，仍保持良好视觉效果
+  const [renderScale, setRenderScale] = useState(1.0) // ✅ 保存渲染缩放比例
   const [enableBacktracking, setEnableBacktracking] = useState(true) // 新增：地形感知回溯开关
+  const [showUI, setShowUI] = useState(true) // 控制UI面板显示/隐藏
+  const [lockView, setLockView] = useState(false) // 锁定视角（禁止鼠标操作相机）
   
   // 加载真实地形数据
   useEffect(() => {
@@ -819,12 +1227,15 @@ const SolarPanel3D_Lite = () => {
           const centerX = (actualMinX + actualMaxX) / 2
           const centerY = (actualMinY + actualMaxY) / 2
           
-          // 计算数据范围并自适应缩放，让数据适配到60x60的显示区域
+          // 计算数据范围并自适应缩放，让数据适配到更大的显示区域
           const rangeX = actualMaxX - actualMinX
           const rangeY = actualMaxY - actualMinY
           const maxRange = Math.max(rangeX, rangeY, 1)
-          const targetSize = 60 // 目标显示尺寸（3D场景单位）
+          const targetSize = 250 // ✅ 增大到250，让组件更大更清晰
           const scale = targetSize / maxRange
+          
+          // ✅ 保存scale到state，供渲染时使用
+          setRenderScale(scale)
           
           const heightScale = 3.0  // 高度缩放：3倍夸张显示地形起伏（真实6.9米→显示20.7米）
           
@@ -838,8 +1249,9 @@ const SolarPanel3D_Lite = () => {
           
           // 提取所有桩位数据
           // 使用固定的杆子高度，让所有太阳能板看起来更统一
-          const fixedPoleHeight = 3.5  // 增加支撑杆高度到3.5米，防止嵌入地形
-          const baseGroundY = -2  // 降低地形基准高度，确保太阳能板始终在地形之上
+          const fixedPoleHeight = 6.0  // ✅ 增加支撑杆高度到6米，防止嵌入地形
+          const baseGroundY = -1  // ✅ 与地形mesh的Y坐标对齐（地形在Y=-1）
+          const safetyOffset = 1.0  // ✅ 额外的安全偏移1米，确保始终在地形之上
           
           // 🔧 修复：每个table（跟踪行）生成多个太阳能板
           // 企业说明：1个table = 1排 = N个太阳能板（N由preset_type决定，如"1x14"表示14个）
@@ -887,29 +1299,31 @@ const SolarPanel3D_Lite = () => {
               const x = (avgX - centerX) * scale
               const z = (avgY - centerY) * scale
               const terrainOffset = (avgGround - minGround) * heightScale
-              const y = baseGroundY + terrainOffset + fixedPoleHeight
+              let y = baseGroundY + terrainOffset + fixedPoleHeight + safetyOffset
+              
+              // ✅ 额外安全检查：确保Y坐标不会异常
+              if (!isFinite(y) || y < baseGroundY) {
+                console.warn(`⚠️ Table ${table.table_id} 单组件高度异常: y=${y}, 使用默认值`)
+                y = baseGroundY + fixedPoleHeight + safetyOffset
+              }
               
               // 验证数据有效性
               if (isFinite(x) && isFinite(y) && isFinite(z)) {
                 totalModules += 1
                 const presetKey = table.preset_type || 'unknown'
                 moduleStats[presetKey] = (moduleStats[presetKey] || 0) + 1
-                return [{ position: [x, y, z], showPole: true }] // 单个组件显示支撑杆
+                return [{ position: [x, y, z], showPole: true, tableId: table.table_id }] // 添加tableId
               } else {
                 console.warn('⚠️ 跳过无效table:', table.table_id, { x, y, z })
                 return []
               }
             }
             
-            // ✅ 正确理解：桩位距离 ≠ 组件排列长度
-            // 企业数据：桩位是支撑点，组件会延伸到桩位之外
-            // 例如：1x81有17个桩，桩距92米，但81个组件需要137.7米
-            
-            const TYPICAL_MODULE_WIDTH = 2.0 // 典型组件宽度2米
-            const MODULE_SPACING_RATIO = 0.85 // 组件间距系数
-            
-            // 使用理论长度而不是桩位距离
-            const rowLength = moduleCount * TYPICAL_MODULE_WIDTH * MODULE_SPACING_RATIO
+            // ✅ 修正理解：使用实际桩位距离作为组件排列长度
+            // 数据验证结果：
+            //   - 1x14配置：桩跨13.40米，组件宽度约0.91米（不是2米！）
+            //   - 1x27配置：桩跨29.19米，组件宽度约1.03米
+            // 结论：组件宽度约1米，应使用实际桩位距离
             
             // 确定排的方向（从第一个桩指向最后一个桩）
             const firstPile = piles[0]
@@ -918,13 +1332,17 @@ const SolarPanel3D_Lite = () => {
             const pilesDirY = lastPile.y - firstPile.y
             const pilesDistance = Math.sqrt(pilesDirX * pilesDirX + pilesDirY * pilesDirY)
             
-            let dirX, dirY
+            // 🔧 使用实际桩位距离作为排长度
+            let rowLength, dirX, dirY
+            
             if (pilesDistance > 1.0) {
-              // 使用桩位方向，但长度为理论长度
-              dirX = (pilesDirX / pilesDistance) * rowLength
-              dirY = (pilesDirY / pilesDistance) * rowLength
+              // 使用桩位方向和实际距离
+              rowLength = pilesDistance
+              dirX = pilesDirX
+              dirY = pilesDirY
             } else {
-              // 桩位距离太小，默认南北方向
+              // 桩位距离太小，默认南北方向，使用默认长度
+              rowLength = moduleCount * 1.0 // 假设组件宽1米
               dirX = 0
               dirY = rowLength
             }
@@ -978,14 +1396,20 @@ const SolarPanel3D_Lite = () => {
               const x = (moduleX - centerX) * scale
               const z = (moduleY - centerY) * scale
               const terrainOffset = (moduleGround - minGround) * heightScale
-              const y = baseGroundY + terrainOffset + fixedPoleHeight
+              let y = baseGroundY + terrainOffset + fixedPoleHeight + safetyOffset
+              
+              // ✅ 额外安全检查：确保Y坐标不会异常（如NaN, Infinity或负值）
+              if (!isFinite(y) || y < baseGroundY) {
+                console.warn(`⚠️ Table ${table.table_id} module ${i} 高度异常: y=${y}, 使用默认值`)
+                y = baseGroundY + fixedPoleHeight + safetyOffset
+              }
               
               // 🔧 判断是否显示支撑杆：精确匹配预计算的索引
               const showPole = poleIndices.has(i)
               
               // 验证数据有效性，防止NaN或Infinity
               if (isFinite(x) && isFinite(y) && isFinite(z)) {
-                modulePositions.push({ position: [x, y, z], showPole })
+                modulePositions.push({ position: [x, y, z], showPole, tableId: table.table_id })
               } else {
                 console.warn('⚠️ 跳过无效位置:', { x, y, z, moduleX, moduleY, moduleGround })
               }
@@ -1247,7 +1671,14 @@ const SolarPanel3D_Lite = () => {
       
       {/* 3D Canvas - 优化性能，专注算法 */}
       <Canvas 
-        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+        style={{ 
+          position: 'absolute', 
+          top: 0, 
+          left: 0, 
+          width: '100%', 
+          height: '100%',
+          pointerEvents: 'auto'
+        }}
         camera={{ position: [25, 18, 25], fov: 50 }}
         shadows
         dpr={[1, 1.5]}
@@ -1267,10 +1698,12 @@ const SolarPanel3D_Lite = () => {
           realTerrainData={realTerrainData}
           maxDisplayCount={maxDisplayCount}
           enableBacktracking={enableBacktracking}
+          renderScale={renderScale}  // ✅ 传递渲染缩放比例
+          lockView={lockView}  // ✅ 传递视角锁定状态
         />
       </Canvas>
       
-      {/* 信息面板 */}
+      {/* 信息面板 - 已隐藏 */}
       <div style={{
         position: 'absolute',
         top: 10,
@@ -1282,7 +1715,8 @@ const SolarPanel3D_Lite = () => {
         fontSize: '12px',
         minWidth: '220px',
         zIndex: 10,
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        display: 'none'  // 隐藏信息面板
       }}>
         <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '13px', color: '#FF9800' }}>
           📚 论文算法演示版
@@ -1379,20 +1813,94 @@ const SolarPanel3D_Lite = () => {
         )}
       </div>
       
+      {/* UI显示/隐藏切换按钮 */}
+      <div 
+        onClick={() => setShowUI(!showUI)}
+        style={{
+          position: 'absolute',
+          top: 20,
+          left: 20,
+          background: 'rgba(0,0,0,0.7)',
+          color: 'white',
+          padding: '12px 18px',
+          borderRadius: '10px',
+          cursor: 'pointer',
+          zIndex: 100,
+          pointerEvents: 'auto',
+          fontSize: '13px',
+          fontWeight: '600',
+          backdropFilter: 'blur(8px)',
+          transition: 'all 0.3s',
+          userSelect: 'none',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'rgba(0,0,0,0.85)'
+          e.currentTarget.style.transform = 'scale(1.05)'
+          e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.4)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'rgba(0,0,0,0.7)'
+          e.currentTarget.style.transform = 'scale(1)'
+          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)'
+        }}
+      >
+        {showUI ? '🙈 隐藏UI' : '👁️ 显示UI'}
+      </div>
+      
+      {/* 🔒 锁定视角按钮 */}
+      <div 
+        onClick={() => setLockView(!lockView)}
+        style={{
+          position: 'absolute',
+          top: 70,
+          left: 20,
+          background: lockView ? 'rgba(255,100,100,0.85)' : 'rgba(0,0,0,0.7)',
+          color: 'white',
+          padding: '12px 18px',
+          borderRadius: '10px',
+          cursor: 'pointer',
+          zIndex: 100,
+          pointerEvents: 'auto',
+          fontSize: '13px',
+          fontWeight: '600',
+          backdropFilter: 'blur(8px)',
+          transition: 'all 0.3s',
+          userSelect: 'none',
+          boxShadow: lockView ? '0 4px 12px rgba(255,100,100,0.4)' : '0 4px 12px rgba(0,0,0,0.3)',
+          border: lockView ? '2px solid rgba(255,100,100,1)' : '1px solid rgba(255,255,255,0.1)'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = lockView ? 'rgba(255,100,100,0.95)' : 'rgba(0,0,0,0.85)'
+          e.currentTarget.style.transform = 'scale(1.05)'
+          e.currentTarget.style.boxShadow = lockView ? '0 6px 16px rgba(255,100,100,0.5)' : '0 6px 16px rgba(0,0,0,0.4)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = lockView ? 'rgba(255,100,100,0.85)' : 'rgba(0,0,0,0.7)'
+          e.currentTarget.style.transform = 'scale(1)'
+          e.currentTarget.style.boxShadow = lockView ? '0 4px 12px rgba(255,100,100,0.4)' : '0 4px 12px rgba(0,0,0,0.3)'
+        }}
+      >
+        {lockView ? '🔒 视角已锁定' : '🔓 锁定视角'}
+      </div>
+      
       {/* 控制面板 */}
-      <div style={{
-        position: 'absolute',
-        bottom: 20,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        background: 'rgba(255,255,255,0.95)',
-        padding: '16px 24px',
-        borderRadius: '12px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-        minWidth: '400px',
-        zIndex: 10,
-        pointerEvents: 'auto'
-      }}>
+      {showUI && (
+        <div style={{
+          position: 'absolute',
+          bottom: 20,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(255,255,255,0.95)',
+          padding: '16px 24px',
+          borderRadius: '12px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          minWidth: '400px',
+          zIndex: 1000,
+          pointerEvents: 'auto',
+          cursor: 'default'
+        }}>
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           {/* 时间控制 */}
           <div>
@@ -1513,29 +2021,53 @@ const SolarPanel3D_Lite = () => {
               </span>
               <Switch 
                 checked={!timeOfDay.paused}
-                onChange={(checked) => setTimeOfDay({ ...timeOfDay, paused: !checked })}
+                onChange={(checked) => {
+                  console.log('Switch clicked, checked:', checked, 'current paused:', timeOfDay.paused)
+                  setTimeOfDay({ ...timeOfDay, paused: !checked })
+                }}
                 size="small"
               />
+              {/* 测试按钮 */}
+              <button 
+                onClick={() => {
+                  console.log('Button clicked! Current paused:', timeOfDay.paused)
+                  setTimeOfDay({ ...timeOfDay, paused: !timeOfDay.paused })
+                }}
+                style={{
+                  marginLeft: '10px',
+                  padding: '4px 12px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  background: timeOfDay.paused ? '#52c41a' : '#ff4d4f',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px'
+                }}
+              >
+                {timeOfDay.paused ? '▶ 播放' : '⏸ 暂停'}
+              </button>
             </div>
             </Space>
           </Space>
         </Space>
       </div>
+      )}
       
       {/* 操作提示 */}
-      <div style={{
-        position: 'absolute',
-        top: 10,
-        right: 10,
-        background: 'rgba(255,255,255,0.95)',
-        padding: '10px 12px',
-        borderRadius: '8px',
-        fontSize: '11px',
-        color: '#666',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        zIndex: 10,
-        pointerEvents: 'auto'
-      }}>
+      {showUI && (
+        <div style={{
+          position: 'absolute',
+          top: 10,
+          right: 10,
+          background: 'rgba(255,255,255,0.95)',
+          padding: '10px 12px',
+          borderRadius: '8px',
+          fontSize: '11px',
+          color: '#666',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          zIndex: 10,
+          pointerEvents: 'auto'
+        }}>
         <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#333' }}>
           🖱️ 鼠标操作：
         </div>
@@ -1579,6 +2111,7 @@ const SolarPanel3D_Lite = () => {
           ⚡ 算法优先 | 渲染简化
         </div>
       </div>
+      )}
     </div>
   )
 }
