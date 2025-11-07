@@ -8,6 +8,7 @@ import Systems from './pages/Systems'
 import Simulations from './pages/Simulations'
 import Weather from './pages/Weather'
 import Analysis from './pages/Analysis'
+import AlgorithmValidation from './components/AlgorithmValidation'
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
               <Route path="/simulations" element={<Simulations />} />
               <Route path="/weather" element={<Weather />} />
               <Route path="/analysis" element={<Analysis />} />
+              <Route path="/validation" element={<AlgorithmValidation />} />
             </Routes>
           </Layout.Content>
         </Layout>

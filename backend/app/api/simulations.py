@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Optional
 from statistics import mean
@@ -436,8 +436,26 @@ async def get_simulation_results(
 @router.get("/{simulation_id}/shading")
 async def get_simulation_shading(
     simulation_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    limit: Optional[int] = Query(None, description="返回记录数限制（分页）", ge=1, le=10000),
+    offset: Optional[int] = Query(0, description="偏移量（分页）", ge=0),
+    start_time: Optional[str] = Query(None, description="开始时间（ISO格式）"),
+    end_time: Optional[str] = Query(None, description="结束时间（ISO格式）"),
+    sample_rate: Optional[int] = Query(None, description="抽样率（每N条取1条）", ge=1, le=100)
 ):
+    """获取模拟的遮挡数据，支持分页、时间过滤和抽样。
+    
+    Args:
+        simulation_id: 模拟任务ID
+        limit: 返回记录数限制（用于分页）
+        offset: 偏移量（用于分页）
+        start_time: 开始时间，ISO格式（如: 2025-11-01T00:00:00）
+        end_time: 结束时间，ISO格式
+        sample_rate: 抽样率，如sample_rate=5表示每5条取1条
+        
+    Returns:
+        遮挡数据和摘要信息
+    """
     simulation = db.query(Simulation).filter(Simulation.id == simulation_id).first()
     if not simulation:
         raise HTTPException(status_code=404, detail="模拟任务不存在")
@@ -449,17 +467,59 @@ async def get_simulation_shading(
             "message": "该模拟未开启遮挡分析"
         }
 
-    results = db.query(SimulationResult).filter(
+    # 构建查询
+    query = db.query(SimulationResult).filter(
         SimulationResult.simulation_id == simulation_id
-    ).order_by(SimulationResult.timestamp.asc()).all()
+    )
+    
+    # 时间范围过滤
+    if start_time:
+        try:
+            from datetime import datetime
+            start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            query = query.filter(SimulationResult.timestamp >= start_dt)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"start_time格式无效: {e}")
+    
+    if end_time:
+        try:
+            from datetime import datetime
+            end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+            query = query.filter(SimulationResult.timestamp <= end_dt)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"end_time格式无效: {e}")
+    
+    # 获取总数（用于分页信息）
+    total_count = query.count()
+    
+    # 应用排序
+    query = query.order_by(SimulationResult.timestamp.asc())
+    
+    # 应用分页
+    if offset:
+        query = query.offset(offset)
+    if limit:
+        query = query.limit(limit)
+    
+    results = query.all()
 
     if not results:
         return {
             "simulation_id": simulation_id,
             "include_shading": True,
             "series": [],
-            "summary": None
+            "summary": None,
+            "pagination": {
+                "total": total_count,
+                "offset": offset or 0,
+                "limit": limit,
+                "returned": 0
+            }
         }
+
+    # 应用抽样（如果指定）
+    if sample_rate and sample_rate > 1:
+        results = [results[i] for i in range(0, len(results), sample_rate)]
 
     series: List[Dict[str, Any]] = []
     terrain_values: List[float] = []
@@ -505,7 +565,108 @@ async def get_simulation_shading(
         "include_shading": True,
         "series": series,
         "summary": summary,
-        "count": len(series)
+        "count": len(series),
+        "pagination": {
+            "total": total_count,
+            "offset": offset or 0,
+            "limit": limit,
+            "returned": len(series),
+            "sample_rate": sample_rate
+        }
+    }
+
+@router.get("/{simulation_id}/shading/aggregated")
+async def get_shading_aggregated(
+    simulation_id: int,
+    db: Session = Depends(get_db),
+    interval: str = Query("1H", description="聚合时间间隔（如: 1H=每小时, 1D=每天, 15T=每15分钟）"),
+    metric: str = Query("mean", description="聚合指标（mean/min/max/median）")
+):
+    """获取聚合后的遮挡数据，适合大数据量场景。
+    
+    Args:
+        simulation_id: 模拟任务ID
+        interval: 时间聚合间隔（pandas frequency strings）
+        metric: 聚合统计指标
+        
+    Returns:
+        聚合后的遮挡数据
+    """
+    simulation = db.query(Simulation).filter(Simulation.id == simulation_id).first()
+    if not simulation:
+        raise HTTPException(status_code=404, detail="模拟任务不存在")
+
+    if not simulation.include_shading:
+        return {
+            "simulation_id": simulation_id,
+            "include_shading": False,
+            "message": "该模拟未开启遮挡分析"
+        }
+
+    # 获取所有结果
+    results = db.query(SimulationResult).filter(
+        SimulationResult.simulation_id == simulation_id
+    ).order_by(SimulationResult.timestamp.asc()).all()
+
+    if not results:
+        return {
+            "simulation_id": simulation_id,
+            "include_shading": True,
+            "series": [],
+            "aggregation": {"interval": interval, "metric": metric}
+        }
+
+    # 转换为DataFrame进行聚合
+    data_list = []
+    for item in results:
+        data = item.detailed_data or {}
+        data_list.append({
+            "timestamp": item.timestamp,
+            "terrain_shading_multiplier": data.get('terrain_shading_multiplier'),
+            "shading_multiplier": data.get('shading_multiplier'),
+            "power_ac": data.get('power_ac', item.power_ac),
+            "irradiance_global": data.get('poa_global', item.irradiance_global)
+        })
+    
+    df = pd.DataFrame(data_list)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.set_index('timestamp')
+    
+    # 聚合
+    metric_func = {
+        'mean': 'mean',
+        'min': 'min',
+        'max': 'max',
+        'median': 'median'
+    }.get(metric, 'mean')
+    
+    try:
+        aggregated = df.resample(interval).agg(metric_func)
+        aggregated = aggregated.dropna(how='all')  # 移除全空行
+        
+        series = []
+        for timestamp, row in aggregated.iterrows():
+            series.append({
+                "timestamp": timestamp.isoformat(),
+                "terrain_shading_multiplier": float(row['terrain_shading_multiplier']) if pd.notna(row['terrain_shading_multiplier']) else None,
+                "shading_multiplier": float(row['shading_multiplier']) if pd.notna(row['shading_multiplier']) else None,
+                "power_ac": float(row['power_ac']) if pd.notna(row['power_ac']) else None,
+                "irradiance_global": float(row['irradiance_global']) if pd.notna(row['irradiance_global']) else None
+            })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"聚合失败: {str(e)}")
+    
+    return {
+        "simulation_id": simulation_id,
+        "include_shading": True,
+        "series": series,
+        "count": len(series),
+        "aggregation": {
+            "interval": interval,
+            "metric": metric,
+            "original_count": len(results),
+            "reduction_ratio": f"{(1 - len(series)/len(results))*100:.1f}%"
+        }
     }
 
 @router.put("/{simulation_id}", response_model=SimulationResponse)
