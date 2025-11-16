@@ -20,11 +20,20 @@ wheels/
 .installed.cfg
 *.egg
 
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+
 # Virtual Environment
 venv/
 env/
 ENV/
 .venv
+env.bak/
+venv.bak/
 
 # IDE
 .vscode/
@@ -37,6 +46,15 @@ ENV/
 .env
 .env.local
 .env.*.local
+*.local
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist-ssr/
 
 # Database
 *.db
@@ -46,14 +64,11 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Logs
+logs/
 *.log
 
-# Node modules (for frontend)
-node_modules/
-
 # Build outputs
-dist/
 build/
-

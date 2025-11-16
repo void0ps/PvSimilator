@@ -6,7 +6,8 @@ import {
   PlayCircleOutlined, 
   CloudOutlined,
   BarChartOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  ExperimentOutlined
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { systemsApi, simulationsApi } from '../../services/api'
@@ -109,6 +110,11 @@ const Sidebar = () => {
       key: '/analysis',
       icon: <BarChartOutlined />,
       label: '分析报告',
+    },
+    {
+      key: '/validation',
+      icon: <ExperimentOutlined />,
+      label: '算法验证',
     },
   ]
 

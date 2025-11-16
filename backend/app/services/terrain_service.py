@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -24,7 +26,13 @@ class TerrainBounds:
 
 
 class TerrainService:
-    """负责解析企业提供的地形/桩位 Excel 数据，并提供结构化结果。"""
+    """负责解析企业提供的地形/桩位 Excel 数据，并提供结构化结果。
+    
+    增强功能：
+    - 缓存刷新锁：防止并发刷新
+    - 异常重试：自动重试失败的文件读取
+    - 无数据回退：提供默认空数据结构
+    """
 
     def __init__(self, file_path: Optional[str | Path] = None) -> None:
         if file_path is None:
@@ -32,22 +40,53 @@ class TerrainService:
             file_path = project_root / "带坡度地形数据.xlsx"
         self.file_path = Path(file_path)
         self._cache_version = 0
+        self._refresh_lock = threading.Lock()  # 缓存刷新锁
+        self._max_retries = 3  # 最大重试次数
+        self._retry_delay = 1.0  # 重试延迟（秒）
 
     @property
     def exists(self) -> bool:
         return self.file_path.exists()
 
     def load_layout(self, refresh: bool = False) -> Dict[str, Any]:
-        """返回结构化地形+桩位数据。"""
-
+        """返回结构化地形+桩位数据。
+        
+        Args:
+            refresh: 是否强制刷新缓存
+            
+        Returns:
+            结构化的地形数据字典
+            
+        Raises:
+            FileNotFoundError: 地形数据文件不存在时
+            RuntimeError: 多次重试后仍无法加载数据时
+        """
         if not self.exists:
-            raise FileNotFoundError(f"未找到地形数据文件: {self.file_path}")
+            logger.warning(f"未找到地形数据文件: {self.file_path}，返回空数据结构")
+            return self._get_empty_layout()
 
         if refresh:
-            # 更新缓存版本，使 lru_cache 失效
-            self._cache_version += 1
+            # 使用锁防止并发刷新
+            with self._refresh_lock:
+                logger.info(f"刷新地形数据缓存（版本：{self._cache_version} -> {self._cache_version + 1}）")
+                self._cache_version += 1
 
-        return self._load_layout_cached(self._cache_version)
+        # 带重试机制加载数据
+        last_exception = None
+        for attempt in range(self._max_retries):
+            try:
+                return self._load_layout_cached(self._cache_version)
+            except Exception as exc:
+                last_exception = exc
+                if attempt < self._max_retries - 1:
+                    logger.warning(f"加载地形数据失败（尝试 {attempt + 1}/{self._max_retries}）: {exc}")
+                    time.sleep(self._retry_delay * (attempt + 1))  # 指数退避
+                else:
+                    logger.error(f"加载地形数据失败，已达最大重试次数: {exc}")
+        
+        # 所有重试失败，返回空数据结构作为回退
+        logger.error(f"无法加载地形数据，返回空数据结构。最后异常: {last_exception}")
+        return self._get_empty_layout()
 
     def get_table(self, table_id: int, refresh: bool = False) -> Optional[Dict[str, Any]]:
         """获取指定 table 的桩位信息。"""
@@ -235,6 +274,22 @@ class TerrainService:
             return float(value) if pd.notna(value) else None
         except (TypeError, ValueError):
             return None
+
+    def _get_empty_layout(self) -> Dict[str, Any]:
+        """返回空的地形数据结构作为回退。
+        
+        用于文件不存在或加载失败时，避免系统崩溃。
+        """
+        metadata = {
+            "source_file": str(self.file_path.name) if self.file_path else "N/A",
+            "total_tables": 0,
+            "total_piles": 0,
+            "generated_at": datetime.now(timezone.utc),
+            "bounds": None,
+            "error": "数据文件不存在或无法加载"
+        }
+        
+        return {"metadata": metadata, "tables": []}
 
 
 terrain_service = TerrainService()

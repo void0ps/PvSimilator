@@ -1,0 +1,203 @@
+/* 算法验证页面样式 */
+
+.algorithm-validation {
+  padding: 24px;
+  background: #f5f5f5;
+  min-height: 100vh;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  padding: 24px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.page-description {
+  margin: 8px 0 0 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* 指标卡片 */
+.metric-description {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* 验证指标 */
+.validation-metric {
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metric-value {
+  font-size: 32px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* 表格样式增强 */
+.ant-table-thead > tr > th {
+  background: #f3f4f6 !important;
+  font-weight: 600;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: #f9fafb !important;
+}
+
+/* 卡片间距 */
+.ant-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.ant-card-head {
+  border-bottom: 2px solid #f3f4f6;
+}
+
+.ant-card-head-title {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* 标签页样式 */
+.ant-tabs-large > .ant-tabs-nav .ant-tabs-tab {
+  font-size: 16px;
+  padding: 12px 16px;
+}
+
+.ant-tabs-tab-active {
+  font-weight: 600;
+}
+
+/* 统计数字样式 */
+.ant-statistic-title {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.ant-statistic-content {
+  font-size: 32px;
+  font-weight: 600;
+}
+
+/* 图表容器 */
+.recharts-wrapper {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.recharts-legend-wrapper {
+  padding-top: 16px;
+}
+
+/* Alert样式 */
+.ant-alert-success {
+  border: 2px solid #22c55e;
+}
+
+.ant-alert-success .ant-alert-message {
+  font-weight: 600;
+  font-size: 16px;
+  color: #15803d;
+}
+
+.ant-alert-success .ant-alert-description {
+  color: #166534;
+}
+
+.ant-alert-success .ant-alert-description ul {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.ant-alert-success .ant-alert-description li {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+/* 标签颜色 */
+.ant-tag-success {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #15803d;
+  font-weight: 500;
+}
+
+.ant-tag-error {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #991b1b;
+  font-weight: 500;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .algorithm-validation {
+    padding: 16px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .page-header h1 {
+    font-size: 24px;
+  }
+
+  .metric-value {
+    font-size: 24px;
+  }
+
+  .ant-statistic-content {
+    font-size: 24px;
+  }
+}
+
+/* 打印样式 */
+@media print {
+  .algorithm-validation {
+    background: white;
+  }
+
+  .page-header button {
+    display: none;
+  }
+
+  .ant-tabs-nav {
+    display: none;
+  }
+
+  .ant-card {
+    box-shadow: none;
+    border: 1px solid #e5e7eb;
+    page-break-inside: avoid;
+  }
+}
+
+
+
