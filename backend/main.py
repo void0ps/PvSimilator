@@ -22,11 +22,23 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+# 禁用自动重定向尾部斜杠（通过 Starlette 的 router 属性）
+try:
+    app.router.redirect_slashes = False
+except AttributeError:
+    # 如果 redirect_slashes 属性不存在，忽略
+    pass
 
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://frontend:80",
+        "http://frontend:3000",
+        "*"  # 允许所有来源（生产环境应该限制）
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

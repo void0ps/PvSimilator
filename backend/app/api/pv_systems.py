@@ -34,6 +34,7 @@ async def create_pv_system(
         logger.error(f"创建光伏系统失败: {e}")
         raise HTTPException(status_code=500, detail="创建光伏系统失败")
 
+@router.get("", response_model=List[PVSystemResponse])
 @router.get("/", response_model=List[PVSystemResponse])
 async def get_pv_systems(
     skip: int = Query(0, ge=0),

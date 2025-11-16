@@ -383,6 +383,7 @@ async def create_simulation(
         logger.error(f"创建模拟任务失败: {e}")
         raise HTTPException(status_code=500, detail=f"创建模拟任务失败: {str(e)}")
 
+@router.get("", response_model=List[SimulationResponse])
 @router.get("/", response_model=List[SimulationResponse])
 async def get_simulations(
     system_id: Optional[int] = None,

@@ -4,7 +4,12 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 # 获取项目根目录
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# 在 Docker 中，通过环境变量 WORKSPACE_ROOT 指定项目根目录
+# 在物理机上，使用默认的项目根目录
+if os.getenv("WORKSPACE_ROOT"):
+    BASE_DIR = Path(os.getenv("WORKSPACE_ROOT"))
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "pv_simulator.db"
 
 class Settings(BaseSettings):

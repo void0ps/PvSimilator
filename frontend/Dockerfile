@@ -1,34 +1,36 @@
-# 使用官方Node镜像（腾讯云镜像加速）
-FROM node:18.17.1-bullseye
+# Multi-stage build - Build stage
+FROM node:18-alpine AS builder
 
-# 配置NPM镜像源（多重镜像源策略）
-RUN npm config set registry https://registry.npmmirror.com/ || \
-    npm config set registry https://registry.npm.taobao.org/ || \
-    npm config set registry https://registry.npmjs.org/
-
-# 1. 设置内存限制和工作目录
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+# Set working directory
 WORKDIR /app
 
-# 2. 复制package文件
+# Configure npm registry (optional, use Chinese mirror for faster downloads)
+RUN npm config set registry https://registry.npmmirror.com/ || true
+
+# Copy package files
 COPY package*.json ./
 
-# 3. 安装依赖（带内存限制）
-RUN npm install --unsafe-perm --legacy-peer-deps && \
-    npm rebuild --update-binary && \
-    find node_modules/.bin -type f -exec chmod 755 {} \; && \
-    npm cache clean --force
+# Install dependencies
+RUN npm ci --legacy-peer-deps --no-audit --prefer-offline
 
-# 4. 复制源代码
+# Copy source code
 COPY . .
 
-# 5. 构建应用（带内存限制）
-USER root
-RUN npm run build && \
-    chown -R 1000:1000 dist
+# Build application
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+RUN npm run build
 
-# 6. 运行配置
-USER 1000
-EXPOSE 3000
-ENV VITE_API_BASE_URL=/api/v1
-CMD ["npx", "serve", "-s", "dist", "-l", "3000"]
+# Runtime stage - Use nginx to serve static files
+FROM nginx:alpine
+
+# Copy build artifacts
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Expose port
+EXPOSE 80
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

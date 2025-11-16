@@ -72,3 +72,53 @@ logs/
 
 # Build outputs
 build/
+dist/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# Test files
+test_*.py
+*_test.py
+check_*.py
+*_test.db
+test_*.db
+
+# Data files (keep structure, ignore content)
+backend/data/*.db
+backend/data/*.txt
+backend/uploads/*
+!backend/data/.gitkeep
+!backend/uploads/.gitkeep
+
+# Analysis output
+backend/analysis/
+terrain_output.txt
+
+# Scripts (keep only essential)
+backend/scripts/*.py
+!backend/scripts/__init__.py
+
+# Documentation duplicates (keep only in docs/)
+*.pdf.md
+backend/*.md
+frontend/*.md
+!README.md
+!docs/**/*.md
+
+# Excel data (large file, should be in .gitignore)
+*.xlsx
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

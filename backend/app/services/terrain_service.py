@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -36,7 +37,12 @@ class TerrainService:
 
     def __init__(self, file_path: Optional[str | Path] = None) -> None:
         if file_path is None:
-            project_root = Path(__file__).resolve().parents[3]
+            # 优先使用环境变量指定的工作空间根目录（Docker环境）
+            # 否则使用默认的项目根目录（物理机环境）
+            if os.getenv("WORKSPACE_ROOT"):
+                project_root = Path(os.getenv("WORKSPACE_ROOT"))
+            else:
+                project_root = Path(__file__).resolve().parents[3]
             file_path = project_root / "带坡度地形数据.xlsx"
         self.file_path = Path(file_path)
         self._cache_version = 0

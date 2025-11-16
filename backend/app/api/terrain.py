@@ -10,6 +10,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+@router.get("/layout/", response_model=TerrainLayoutResponse)
 @router.get("/layout", response_model=TerrainLayoutResponse)
 async def get_terrain_layout(refresh: bool = Query(False, description="是否强制刷新缓存")):
     try:

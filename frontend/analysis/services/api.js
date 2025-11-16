@@ -21,16 +21,34 @@ const api = axios.create({
   }
 })
 
-// 请求拦截器
+// 请求拦截器 - 自动添加尾部斜杠（如果需要，但排除 terrain/layout）
 api.interceptors.request.use(
   (config) => {
-    // 可以在这里添加认证token等
+    // 对于 GET 请求到列表端点，确保有尾部斜杠
+    // 但 terrain/layout 不需要尾部斜杠
+    if (config.method === 'get' && config.url && !config.url.includes('/terrain/layout')) {
+      // 分离 URL 和查询参数
+      const [urlPath, queryString] = config.url.split('?')
+      
+      // 如果 URL 路径不以斜杠结尾
+      if (urlPath && !urlPath.endsWith('/')) {
+        const urlParts = urlPath.split('/').filter(p => p)
+        const lastPart = urlParts[urlParts.length - 1]
+        
+        // 如果最后一部分不是数字（ID），添加尾部斜杠
+        if (!/^\d+$/.test(lastPart) && lastPart !== '') {
+          // 重新组合 URL
+          config.url = urlPath + '/' + (queryString ? '?' + queryString : '')
+        }
+      }
+    }
     return config
   },
   (error) => {
     return Promise.reject(error)
   }
 )
+
 
 // 响应拦截器
 api.interceptors.response.use(

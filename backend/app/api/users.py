@@ -45,6 +45,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     
     return db_user
 
+@router.get("", response_model=List[UserResponse])
 @router.get("/", response_model=List[UserResponse])
 def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """获取用户列表"""
