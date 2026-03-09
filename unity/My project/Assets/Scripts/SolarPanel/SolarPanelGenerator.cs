@@ -194,7 +194,7 @@ namespace PVSimulator.SolarPanel
             // 创建预制体根对象
             GameObject prefabRoot = new GameObject("PanelPrefab");
 
-            // 1. 创建面板
+            // 1. 创建面板 (在原点)
             GameObject panel = GameObject.CreatePrimitive(PrimitiveType.Cube);
             panel.name = "Panel";
             panel.transform.SetParent(prefabRoot.transform);
@@ -224,7 +224,8 @@ namespace PVSimulator.SolarPanel
             poleCube.transform.localPosition = new Vector3(0, 0.5f, 0);
 
             // 杆子位置：在面板正下方
-            poleContainer.transform.localPosition = new Vector3(0, -panelSize.y / 2f, 0);
+            float poleY = -panelSize.y / 2f;
+            poleContainer.transform.localPosition = new Vector3(0, poleY, 0);
             poleContainer.transform.localScale = new Vector3(poleSize.x, 1f, poleSize.z);
 
             var poleRenderer = poleCube.GetComponent<MeshRenderer>();
