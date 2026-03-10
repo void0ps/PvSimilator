@@ -162,3 +162,49 @@ SolarPanel 2 (root) - 位于 Y=0 (扭力管位置)
 2. **旋转中心**: 面板围绕扭力管(Assembly)旋转, 不是面板几何中心
 3. **杆子分离**: 只有 Pole1 等支撑结构移到不旋转容器, Assembly 保留在旋转容器内
 4. **角度限制**: `maxAngle = 60f` 限制旋转角度在 ±60° 范围内
+
+## 回溯算法参考 (docs/TERRAIN_BACKTRACKING_ALGORITHMS.md)
+
+### 论文来源
+1. **NREL/CP-5K00-76023** (2020) - Maximizing Yield with Improved Single-Axis Backtracking on Cross-Axis Slopes
+2. **NREL/TP-5K00-76626** (2020) - Slope-Aware Backtracking for Single-Axis Trackers
+3. **IEEE PVSC 2022** - Terrain Aware Backtracking via Forward Ray Tracing
+4. **IEEE PVSC 2023** - Modeling Transposition for Single-Axis Trackers Using Terrain-Aware Backtracking Strategies
+
+### 核心公式
+
+**1. 斜坡感知回溯修正角度 (NREL Equation 11-14):**
+```
+            cos(θT - βc)
+cos(θc) = ─────────────────────
+         GCR × cos(βc)
+
+                     |cos(θT - βc)|
+θc = -sign(θT) × arccos( ───────────────────── )
+                     GCR × cos(βc)
+```
+
+**2. 横轴坡度角 (Equation 25-26):**
+```
+βc = β_terrain × sin(γ_slope - γ_axis)
+```
+
+**3. 遮挡判断 (Equation 15):**
+```
+|cos(θT - βc)| / (GCR × cos(βc)) < 1  → 需要回溯
+```
+
+### 参数定义
+| 符号 | 英文名称 | 中文名称 |
+|------|----------|----------|
+| βc | Cross-axis slope | 横轴坡度角 |
+| θT | True-tracking rotation | 真跟踪角度 |
+| θc | Backtracking correction | 回溯修正角 |
+| GCR | Ground coverage ratio | 地面覆盖率比 = 模块宽度/行间距 |
+| γa | Axis azimuth | 轴方位角 |
+| βs | Solar elevation | 太阳高度角 |
+
+### 代码实现位置
+- `backend/app/services/terrain_backtracking.py` - 后端核心算法
+- `unity/.../SolarPanelController.cs` - Unity 端角度计算
+- `unity/.../SolarPanelGroup.cs` - 旋转应用
