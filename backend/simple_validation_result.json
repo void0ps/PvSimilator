@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-03-09T21:49:07.434809",
+  "method": "theoretical_validation",
+  "terrain_stats": {
+    "total_rows": 403,
+    "high_slope_count": 8,
+    "low_slope_count": 368,
+    "slope_range": [
+      0.0,
+      10.18
+    ],
+    "avg_slope": 0.9172952853598014
+  },
+  "results": {
+    "avg_shading_no_backtrack": 0.2162240611760981,
+    "avg_shading_with_backtrack": 0.08648962447043924,
+    "avg_energy_loss_no_backtrack": 78.37759388239019,
+    "avg_energy_loss_with_backtrack": 91.35103755295607,
+    "avg_improvement_percent": -16.552490358447645
+  },
+  "paper_validation": {
+    "expected_energy_loss_range": [
+      35,
+      40
+    ],
+    "expected_improvement_range": [
+      55,
+      65
+    ],
+    "energy_loss_match": 

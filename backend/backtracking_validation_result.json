@@ -1,0 +1,37 @@
+{
+  "generated_at": "2026-03-09T21:51:06.696867",
+  "method": "theoretical_model_based_on_paper",
+  "terrain_stats": {
+    "total_tables": 403,
+    "high_slope_count": 8,
+    "low_slope_count": 368,
+    "slope_range": [
+      0.0,
+      10.18
+    ],
+    "avg_slope": 0.9172952853598014
+  },
+  "validation_metrics": {
+    "high_slope": {
+      "no_backtrack": {
+        "energy_loss": 32.8,
+        "shading_hours": 7.6,
+        "shading_incidents": 262,
+        "avg_blocking_angle": 41.3
+      },
+      "with_backtrack": {
+        "energy_loss": 13.1,
+        "shading_hours": 3.0,
+        "shading_incidents": 104,
+        "avg_blocking_angle": 20.7
+      },
+      "improvement_percent": 60.0
+    }
+  },
+  "paper_comparison": {
+    "energy_loss_in_range": false,
+    "reduction_in_range": true,
+    "overall_match": false
+  },
+  "conclusion": "Needs further verification"
+}

@@ -111,36 +111,6 @@ dist/
 nul
 
 # ============================================
-# Backend - Validation & Test Scripts (generated)
-# ============================================
-backend/run_*.py
-backend/validate_*.py
-backend/simple_validation.py
-backend/debug_*.py
-backend/analyze_*.py
-backend/add_*.py
-backend/*_result.json
-backend/api_validation_result.json
-backend/backtracking_validation_result.json
-backend/real_simulation_validation_result.json
-backend/simple_validation_result.json
-backend/true_backtracking_validation_result.json
-backend/validation_result.json
-
-# Keep actual test files
-!backend/tests/
-!backend/app/**/test_*.py
-
-# Backend data directories
-backend/data/*.db
-backend/data/*.txt
-backend/uploads/*
-!backend/data/.gitkeep
-!backend/uploads/.gitkeep
-backend/analysis/
-terrain_output.txt
-
-# ============================================
 # Unity Project
 # ============================================
 # Unity generated folders (LARGE - DO NOT COMMIT)

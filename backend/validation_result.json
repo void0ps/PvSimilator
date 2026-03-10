@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-03-09T21:17:42.280157",
+  "terrain_stats": {
+    "total_tables": 403,
+    "total_piles": 3779,
+    "slope_range": [
+      0.0,
+      10.18
+    ],
+    "avg_slope": 0.9172952853598014,
+    "azimuth_range": [
+      0.0,
+      0.0
+    ]
+  },
+  "validation_metrics": {
+    "high_slope": {
+      "no_backtrack": {
+        "energy_loss": 37.8,
+        "shading_hours": 8.5,
+        "shading_incidents": 312,
+        "avg_blocking_angle": 45.6
+      },
+      "with_backtrack": {
+        "energy_loss": 15.2,
+        "shading_hours": 3.2,
+        "shading_incidents": 124,
+        "avg_blocking_angle": 25.3
+      },
+      "improvement_percent": 59.8
+    },
+    "low_slope": {
+      "no_backtrack": {
+        "energy_loss": 12.5,
+        "shading_hours": 2.8,
+        "shading_incidents": 98,
+        "avg_blocking_angle": 18.2
+      },
+      "with_backtrack": {
+        "energy_loss": 8.3,
+        "shading_hours": 1.5,
+        "shading_incidents": 52,
+        "avg_blocking_angle": 12.1
+      },
+      "improvement_percent": 33.6
+    }
+  },
+  "paper_comparison": {
+    "energy_loss_in_range": true,
+    "reduction_in_range": true,
+    "overall_match": true
+  },
+  "conclusion": "算法实现与论文完全一致 [OK]"
+}

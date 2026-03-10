@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-03-09T21:32:24.261202",
+  "method": "real_simulation",
+  "system_id": 2,
+  "simulation_ids": {
+    "no_backtrack": 3,
+    "with_backtrack": 4
+  },
+  "analysis": {
+    "terrain_stats": {
+      "total_rows": 403,
+      "high_slope_count": 8,
+      "low_slope_count": 368,
+      "slope_range": [
+        0.0,
+        10.18
+      ],
+      "avg_slope": 0.9172952853598014
+    },
+    "energy_analysis": {
+      "total_energy_no_backtrack": 163.27303432919297,
+      "total_energy_with_backtrack": 29.5719539321085,
+      "data_points_no": 10,
+      "data_points_with": 10
+    }
+  }
+}

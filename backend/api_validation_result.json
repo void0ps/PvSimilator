@@ -1,0 +1,28 @@
+{
+  "generated_at": "2026-03-09T21:25:27.783840",
+  "method": "terrain_analysis",
+  "terrain_stats": {
+    "total_tables": 403,
+    "high_slope_count": 8,
+    "low_slope_count": 368,
+    "slope_range": [
+      0.0,
+      10.18
+    ],
+    "avg_slope": 0.9172952853598014
+  },
+  "analysis_results": {
+    "high_slope": {
+      "samples": 8,
+      "avg_spacing": 7.1276153846097605,
+      "shading_angle": 15.674053554758414,
+      "shading_hours": 2.089873807301122
+    },
+    "low_slope": {
+      "samples": 368,
+      "avg_spacing": 6.321834337349886,
+      "shading_angle": 17.55548978830628,
+      "shading_hours": 2.3407319717741704
+    }
+  }
+}
