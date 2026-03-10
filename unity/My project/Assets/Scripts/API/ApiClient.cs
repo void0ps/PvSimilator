@@ -17,6 +17,9 @@ namespace PVSimulator.API
         [SerializeField] private string baseUrl = "http://localhost:8000";
         [SerializeField] private float timeout = 30f;
 
+        // 公开baseUrl供其他脚本访问
+        public string BaseUrl => baseUrl;
+
         #region 数据模型
 
         [Serializable]

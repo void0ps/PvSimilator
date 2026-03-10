@@ -1,9 +1,13 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Networking;
 using PVSimulator.Data;
 using PVSimulator.Time;
 using PVSimulator.Sun;
 using PVSimulator.SolarPanel;
+using PVSimulator.API;
 
 namespace PVSimulator.SolarPanel
 {
@@ -20,8 +24,7 @@ namespace PVSimulator.SolarPanel
 
         [Header("追踪设置")]
         [SerializeField] private bool enableTracking = true;
-        [SerializeField] private bool enableBacktracking = true;  // 默认开启地形感知回溯
-        [SerializeField] private float smoothingFactor = 008f;
+        [SerializeField] private float smoothingFactor = 0.08f;
         [SerializeField] private float maxAngle = 60f;
 
         [Header("回溯设置")]
@@ -580,7 +583,7 @@ namespace PVSimulator.SolarPanel
             if (!float.TryParse(latitude, out lat)) lat = 35.0f;
             if (!float.TryParse(longitude, out lon)) lon = -120.0f;
 
-            string url = $"{apiClient.baseUrl}/api/v1/shading/realtime/tracking/current" +
+            string url = $"{apiClient.BaseUrl}/api/v1/shading/realtime/tracking/current" +
                         $"?latitude={lat}" +
                         $"&longitude={lon}" +
                         $"&enable_backtracking={enableBacktracking.ToString().ToLower()}" +
