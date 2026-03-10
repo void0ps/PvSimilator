@@ -153,106 +153,89 @@ namespace PVSimulator.SolarPanel
 
                     panelInstance.SetActive(true);
 
-                    // 关键：只移动 Pole1 (杆子网格)，保留 Assembly (扭力管) 在旋转容器内
-                    // 这样面板围绕扭力管旋转，杆子保持垂直不旋转
+                    // 关键：移动所有支撑结构部件到不旋转的容器
+                    // 只保留 Assembly (扭力管) 在旋转容器内
+                    // Pole1, Polecap, G_1_1, G_2_1 等都应该在不旋转的容器内
 
-                    // 调试：列出预制体实例的直接子对象
-                    if (totalCount == 0)
+                    // 查找 Structure/Pole 容器
+                    Transform poleContainerTransform = panelInstance.transform.Find("Structure/Pole");
+
+                    // 计算扭力管的实际世界位置
+                    Vector3 torqueTubeWorldPos = panelContainer.transform.position + Vector3.down * panelYOffset;
+
+                    // 创建杆子容器（在 Row 下，不随面板旋转）
+                    GameObject poleContainerObj = new GameObject($"Pole_{table.table_id}_{totalCount}");
+                    poleContainerObj.transform.parent = rowContainer.transform;
+                    poleContainerObj.transform.position = torqueTubeWorldPos;
+                    poleContainerObj.transform.rotation = Quaternion.Euler(0, table.axis_azimuth, 0);
+
+                    int movedCount = 0;
+                    string movedNames = "";
+
+                    if (poleContainerTransform != null)
                     {
-                        System.Text.StringBuilder childrenList = new System.Text.StringBuilder();
-                        childrenList.Append($"[SolarPanelGenerator] panelInstance '{panelInstance.name}' children: ");
-                        foreach (Transform child in panelInstance.transform)
+                        // 收集所有需要移动的子对象（除了 Assembly 扭力管）
+                        List<Transform> toMove = new List<Transform>();
+                        foreach (Transform child in poleContainerTransform)
                         {
-                            childrenList.Append($"{child.name}, ");
-                        }
-                        Debug.Log(childrenList.ToString());
-                    }
-
-                    // 查找 Pole1 的路径（新prefab结构）
-                    Transform poleMesh = panelInstance.transform.Find("Structure/Pole/Pole1");
-                    if (poleMesh == null)
-                    {
-                        // 兼容旧prefab结构：Pole/Cube
-                        poleMesh = panelInstance.transform.Find("Pole/Cube");
-                    }
-                    if (poleMesh == null)
-                    {
-                        // 尝试在根级别找 Pole1
-                        poleMesh = panelInstance.transform.Find("Pole1");
-                    }
-                    if (poleMesh == null)
-                    {
-                        // 尝试找 Structure/Pole 然后找其子对象 Pole1
-                        Transform poleContainerTransform = panelInstance.transform.Find("Structure/Pole");
-                        if (poleContainerTransform != null)
-                        {
-                            // 调试：列出 Pole 容器的子对象
-                            if (totalCount == 0)
+                            // Assembly 是扭力管，应该跟随面板旋转，不移动
+                            if (!child.name.Contains("Assembly"))
                             {
-                                System.Text.StringBuilder poleChildren = new System.Text.StringBuilder();
-                                poleChildren.Append($"[SolarPanelGenerator] Structure/Pole children: ");
-                                foreach (Transform child in poleContainerTransform)
-                                {
-                                    poleChildren.Append($"{child.name} (hasRenderer={child.GetComponent<Renderer>() != null}), ");
-                                }
-                                Debug.Log(poleChildren.ToString());
-                            }
-
-                            poleMesh = poleContainerTransform.Find("Pole1");
-                            if (poleMesh == null)
-                            {
-                                // 查找第一个名称含 Pole 的子对象（即使没有 Renderer）
-                                foreach (Transform child in poleContainerTransform)
-                                {
-                                    if (child.name.Contains("Pole"))
-                                    {
-                                        poleMesh = child;
-                                        Debug.Log($"[SolarPanelGenerator] Found pole by name pattern: {child.name}");
-                                        break;
-                                    }
-                                }
+                                toMove.Add(child);
                             }
                         }
-                        else
+
+                        // 移动收集的子对象
+                        foreach (Transform child in toMove)
                         {
-                            Debug.LogWarning($"[SolarPanelGenerator] Structure/Pole not found in prefab!");
+                            child.SetParent(poleContainerObj.transform, true); // 保持世界位置
+
+                            // 如果是 Pole1（主杆子网格），调整高度和位置
+                            if (child.name == "Pole1" || child.name.Contains("Pole"))
+                            {
+                                child.localPosition = new Vector3(0, -actualPoleHeight / 2f, 0);
+                                child.localRotation = Quaternion.identity;
+
+                                // 调整杆子高度
+                                Vector3 meshScale = child.localScale;
+                                child.localScale = new Vector3(meshScale.x, actualPoleHeight, meshScale.z);
+                            }
+
+                            movedCount++;
+                            movedNames += child.name + ", ";
                         }
-                    }
 
-                    if (poleMesh != null)
-                    {
-                        // 计算扭力管的实际世界位置
-                        // 由于预制体向下偏移了 panelYOffset，扭力管位置也相应下移
-                        Vector3 torqueTubeWorldPos = panelContainer.transform.position + Vector3.down * panelYOffset;
-
-                        // 创建杆子容器（在 Row 下，不随面板旋转）
-                        GameObject poleContainerObj = new GameObject($"Pole_{table.table_id}_{totalCount}");
-                        poleContainerObj.transform.parent = rowContainer.transform;
-                        poleContainerObj.transform.position = torqueTubeWorldPos;
-                        poleContainerObj.transform.rotation = Quaternion.Euler(0, table.axis_azimuth, 0);
-
-                        // 移动 Pole1 到杆子容器
-                        poleMesh.SetParent(poleContainerObj.transform, false);
-
-                        // 设置杆子网格的本地位置和缩放
-                        // 杆子顶部在容器原点（扭力管位置），杆子向下延伸
-                        poleMesh.localPosition = new Vector3(0, -actualPoleHeight / 2f, 0);
-                        poleMesh.localRotation = Quaternion.identity;
-
-                        // 调整杆子高度
-                        Vector3 meshScale = poleMesh.localScale;
-                        poleMesh.localScale = new Vector3(meshScale.x, actualPoleHeight, meshScale.z);
-
-                        // 调试日志：验证杆子容器设置
+                        // 调试日志
                         if (totalCount < 3)
                         {
-                            Debug.Log($"[SolarPanelGenerator] PoleContainer '{poleContainerObj.name}' parent: {poleContainerObj.transform.parent.name}, rotation: {poleContainerObj.transform.rotation.eulerAngles}");
-                            Debug.Log($"[SolarPanelGenerator] PoleMesh '{poleMesh.name}' localRotation: {poleMesh.localRotation.eulerAngles}, worldRotation: {poleMesh.rotation.eulerAngles}");
+                            Debug.Log($"[SolarPanelGenerator] Moved {movedCount} pole components to '{poleContainerObj.name}': {movedNames}");
+                            Debug.Log($"[SolarPanelGenerator] PoleContainer parent: {poleContainerObj.transform.parent.name}, rotation: {poleContainerObj.transform.rotation.eulerAngles}");
                         }
                     }
                     else
                     {
-                        Debug.LogWarning($"[SolarPanelGenerator] 未找到 Pole1 网格！面板将跟随旋转。");
+                        // 兼容旧结构：直接查找 Pole1
+                        Transform poleMesh = panelInstance.transform.Find("Pole/Cube");
+                        if (poleMesh == null)
+                        {
+                            poleMesh = panelInstance.transform.Find("Pole1");
+                        }
+
+                        if (poleMesh != null)
+                        {
+                            poleMesh.SetParent(poleContainerObj.transform, false);
+                            poleMesh.localPosition = new Vector3(0, -actualPoleHeight / 2f, 0);
+                            poleMesh.localRotation = Quaternion.identity;
+
+                            Vector3 meshScale = poleMesh.localScale;
+                            poleMesh.localScale = new Vector3(meshScale.x, actualPoleHeight, meshScale.z);
+
+                            Debug.Log($"[SolarPanelGenerator] (Fallback) Moved '{poleMesh.name}' to '{poleContainerObj.name}'");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[SolarPanelGenerator] 未找到任何杆子组件！");
+                        }
                     }
 
                     // 静态批处理
