@@ -149,13 +149,24 @@ namespace PVSimulator.SolarPanel
                     }
 
                     // 预制体向下偏移，使面板网格中心在容器原点（旋转中心）
-                    // 额外向下偏移 1.5 单位，让板子更低
-                    panelInstance.transform.localPosition = new Vector3(0, -panelYOffset - 1.5f, 0);
+                    panelInstance.transform.localPosition = new Vector3(0, -panelYOffset, 0);
 
                     panelInstance.SetActive(true);
 
                     // 关键：只移动 Pole1 (杆子网格)，保留 Assembly (扭力管) 在旋转容器内
                     // 这样面板围绕扭力管旋转，杆子保持垂直不旋转
+
+                    // 调试：列出预制体实例的直接子对象
+                    if (totalCount == 0)
+                    {
+                        System.Text.StringBuilder childrenList = new System.Text.StringBuilder();
+                        childrenList.Append($"[SolarPanelGenerator] panelInstance '{panelInstance.name}' children: ");
+                        foreach (Transform child in panelInstance.transform)
+                        {
+                            childrenList.Append($"{child.name}, ");
+                        }
+                        Debug.Log(childrenList.ToString());
+                    }
 
                     // 查找 Pole1 的路径（新prefab结构）
                     Transform poleMesh = panelInstance.transform.Find("Structure/Pole/Pole1");
@@ -175,19 +186,36 @@ namespace PVSimulator.SolarPanel
                         Transform poleContainerTransform = panelInstance.transform.Find("Structure/Pole");
                         if (poleContainerTransform != null)
                         {
+                            // 调试：列出 Pole 容器的子对象
+                            if (totalCount == 0)
+                            {
+                                System.Text.StringBuilder poleChildren = new System.Text.StringBuilder();
+                                poleChildren.Append($"[SolarPanelGenerator] Structure/Pole children: ");
+                                foreach (Transform child in poleContainerTransform)
+                                {
+                                    poleChildren.Append($"{child.name} (hasRenderer={child.GetComponent<Renderer>() != null}), ");
+                                }
+                                Debug.Log(poleChildren.ToString());
+                            }
+
                             poleMesh = poleContainerTransform.Find("Pole1");
                             if (poleMesh == null)
                             {
-                                // 查找第一个包含 Renderer 且名称含 Pole 的子对象
+                                // 查找第一个名称含 Pole 的子对象（即使没有 Renderer）
                                 foreach (Transform child in poleContainerTransform)
                                 {
-                                    if (child.name.Contains("Pole") && child.GetComponent<Renderer>() != null)
+                                    if (child.name.Contains("Pole"))
                                     {
                                         poleMesh = child;
+                                        Debug.Log($"[SolarPanelGenerator] Found pole by name pattern: {child.name}");
                                         break;
                                     }
                                 }
                             }
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[SolarPanelGenerator] Structure/Pole not found in prefab!");
                         }
                     }
 
@@ -214,6 +242,17 @@ namespace PVSimulator.SolarPanel
                         // 调整杆子高度
                         Vector3 meshScale = poleMesh.localScale;
                         poleMesh.localScale = new Vector3(meshScale.x, actualPoleHeight, meshScale.z);
+
+                        // 调试日志：验证杆子容器设置
+                        if (totalCount < 3)
+                        {
+                            Debug.Log($"[SolarPanelGenerator] PoleContainer '{poleContainerObj.name}' parent: {poleContainerObj.transform.parent.name}, rotation: {poleContainerObj.transform.rotation.eulerAngles}");
+                            Debug.Log($"[SolarPanelGenerator] PoleMesh '{poleMesh.name}' localRotation: {poleMesh.localRotation.eulerAngles}, worldRotation: {poleMesh.rotation.eulerAngles}");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[SolarPanelGenerator] 未找到 Pole1 网格！面板将跟随旋转。");
                     }
 
                     // 静态批处理
