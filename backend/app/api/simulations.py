@@ -167,11 +167,24 @@ async def run_simulation_task(simulation_id: int, db: Session):
                 tracker_rows = build_tracker_rows(layout)
                 if tracker_rows:
                     neighbors = find_row_neighbors(tracker_rows)
-                    solver = TerrainBacktrackingSolver(tracker_rows, neighbors)
+
+                    # 根据backtrack_enabled配置回溯算法
+                    # 当启用回溯时，同时启用NREL论文遮挡公式
+                    backtrack_enabled = getattr(simulation, 'backtrack_enabled', True)
+                    from app.services.terrain_backtracking import BacktrackingConfig
+                    bt_config = BacktrackingConfig(
+                        backtrack=backtrack_enabled,
+                        use_nrel_shading_fraction=backtrack_enabled  # 启用回溯时使用NREL公式
+                    )
+
+                    solver = TerrainBacktrackingSolver(tracker_rows, neighbors, config=bt_config)
                     backtracking_result = solver.compute_tracker_angles(
                         solar_position['apparent_zenith'],
                         solar_position['azimuth']
                     )
+
+                    # 记录回溯配置
+                    logger.info(f"Backtracking enabled: {backtrack_enabled}")
                     shading_df = backtracking_result.shading_factor
                     if not shading_df.empty:
                         weight_map = {

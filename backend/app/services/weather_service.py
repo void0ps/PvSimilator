@@ -198,33 +198,70 @@ class WeatherService:
     
     def generate_synthetic_data(self, latitude: float, longitude: float,
                                start_date: str, end_date: str) -> pd.DataFrame:
-        """生成合成气象数据（当API不可用时）"""
-        
-        dates = pd.date_range(start=start_date, end=end_date, freq='D')
-        
+        """生成合成气象数据（当API不可用时）
+
+        使用pvlib的clearsky模型生成合理的辐照度数据，
+        然后应用天气因子模拟实际条件。
+        """
+        import pvlib
+        from pvlib.location import Location
+
+        dates = pd.date_range(start=start_date, end=end_date, freq='D', tz='UTC')
+
+        # 创建pvlib Location对象
+        location = Location(
+            latitude=latitude,
+            longitude=longitude,
+            tz='UTC'
+        )
+
+        # 获取clearsky辐照度数据
+        clearsky = location.get_clearsky(dates, model='ineichen')
+
         # 基于纬度和季节生成合理的数据
         data = []
-        for date in dates:
+        for i, date in enumerate(dates):
             # 季节性温度变化
             day_of_year = date.timetuple().tm_yday
             base_temp = 15 + 10 * np.sin(2 * np.pi * (day_of_year - 80) / 365)
-            
+
             # 纬度影响
             lat_effect = (latitude - 30) * 0.5
             base_temp -= lat_effect
-            
+
             # 日温度变化
-            daily_variation = 8 * np.sin(2 * np.pi * date.hour / 24) if hasattr(date, 'hour') else 0
-            
+            daily_variation = 8 * np.sin(2 * np.pi * (date.hour if hasattr(date, 'hour') else 12) / 24)
+
             temperature = base_temp + daily_variation + np.random.normal(0, 3)
-            
-            # 辐射数据（基于季节和天气）
+
+            # 从clearsky获取辐照度，应用天气因子
             seasonal_factor = 0.7 + 0.3 * np.sin(2 * np.pi * (day_of_year - 80) / 365)
-            weather_factor = max(0.3, np.random.beta(2, 2))  # 模拟天气变化
-            
-            ghi = 800 * seasonal_factor * weather_factor + np.random.normal(0, 50)
-            dhi = ghi * (0.3 + 0.2 * np.random.random())  # 散射辐射比例
-            
+            weather_factor = max(0.3, np.random.beta(2, 2))  # 模拟天气变化（0.3-1.0）
+
+            # 使用clearsky数据作为基础
+            ghi_clear = float(clearsky['ghi'].iloc[i]) if i < len(clearsky) else 800 * seasonal_factor
+            dni_clear = float(clearsky['dni'].iloc[i]) if i < len(clearsky) else 900 * seasonal_factor
+            dhi_clear = float(clearsky['dhi'].iloc[i]) if i < len(clearsky) else 100 * seasonal_factor
+
+            # 应用天气因子（云覆盖影响）
+            ghi = ghi_clear * weather_factor
+            dni = dni_clear * weather_factor * 0.8  # 直射辐射受云影响更大
+            dhi = dhi_clear * (0.5 + 0.5 * weather_factor)  # 散射辐射在多云时反而增加
+
+            # 确保物理一致性：GHI = DNI*cos(zenith) + DHI
+            # 如果不一致，重新计算
+            solar_position = location.get_solarposition([date])
+            zenith = float(solar_position['zenith'].iloc[0])
+            if zenith < 90:
+                # 白天，确保辐照度分量一致
+                cos_zenith = np.cos(np.radians(zenith))
+                calculated_ghi = dni * cos_zenith + dhi
+                if calculated_ghi > 0:
+                    # 按比例调整DNI和DHI
+                    ratio = ghi / calculated_ghi
+                    dni = dni * ratio
+                    dhi = dhi * ratio
+
             data.append({
                 'timestamp': date,
                 'temperature': max(-20, min(45, temperature)),
@@ -233,10 +270,15 @@ class WeatherService:
                 'pressure': 1013 + np.random.normal(0, 10),
                 'ghi': max(0, ghi),
                 'dhi': max(0, dhi),
-                'dni': max(0, ghi - dhi)  # 直接辐射
+                'dni': max(0, dni),  # 使用pvlib计算的DNI
+                'solar_zenith': zenith if zenith < 90 else 90,
+                'solar_azimuth': float(solar_position['azimuth'].iloc[0]) if zenith < 90 else 0
             })
-        
-        return pd.DataFrame(data)
+
+        df = pd.DataFrame(data)
+        df.attrs['used_synthetic_data'] = True
+        df.attrs['resolution'] = 'daily'
+        return df
     
     async def get_weather_data(self, latitude: float, longitude: float,
                               start_date: str, end_date: str,

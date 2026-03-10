@@ -14,7 +14,7 @@ from .tracker_geometry import TrackerRow
 @dataclass
 class BacktrackingConfig:
     module_width: float = 2.0  # 组件东西向宽度（米）
-    max_angle: float = 85.0    # 机械最大倾角（度）
+    max_angle: float = 52.0    # 机械最大倾角（度）- NREL论文典型值
     backtrack: bool = True
     shading_margin_limit: float = 10.0  # 允许的负裕度对应满遮挡的角度幅度
     max_neighbor_cross_distance: float = 20.0  # 过滤横向距离过远的邻居（米）
@@ -25,6 +25,9 @@ class BacktrackingConfig:
     use_nrel_slope_aware_correction: bool = False  # 是否使用论文斜坡感知修正 (Equations 11-14)
     use_nrel_complete_formula: bool = False  # 是否使用论文完整遮挡公式 (Equation 32)
     nrel_shading_limit_deg: float = 5.0  # NREL论文建议的遮挡裕度限制（度）
+    # NEW: 简化模型地形修正参数
+    use_terrain_aware_simple_model: bool = True  # 简化模型是否启用地形感知修正
+    terrain_correction_threshold_deg: float = 0.5  # 触发地形修正的最小坡度（度）
 
 
 @dataclass
@@ -289,6 +292,73 @@ class TerrainBacktrackingSolver:
         # 限制在 0-1 范围内
         return float(np.clip(shading, 0.0, 1.0))
 
+    def _calculate_terrain_adjusted_shading(
+        self,
+        shading_margin: float,
+        gcr: float,
+        beta_c: float,
+    ) -> float:
+        """地形修正的遮挡系数计算。
+
+        根据NREL论文，当存在横轴坡度时，即使shading_margin > 0也可能产生遮挡。
+        这是因为地形坡度会改变有效GCR和遮挡几何关系。
+
+        修正逻辑：
+        1. 当坡度小于阈值时，使用原始简化模型
+        2. 当坡度大于阈值时，计算有效GCR修正并调整遮挡系数
+
+        Args:
+            shading_margin: 原始遮挡裕度（度）
+            gcr: 地面覆盖率比
+            beta_c: 横轴坡度（度）
+
+        Returns:
+            float: 遮挡系数 (0-1)
+        """
+        # 如果坡度小于阈值，使用原始简化模型逻辑
+        if abs(beta_c) < self.config.terrain_correction_threshold_deg:
+            if shading_margin >= 0:
+                return 1.0
+            else:
+                return max(0.0, 1 + shading_margin / self.config.shading_margin_limit)
+
+        # 有横轴坡度时的修正
+        beta_c_rad = np.radians(beta_c)
+
+        # 计算有效GCR修正
+        # 当坡度增加时，有效GCR也增加，导致更多遮挡
+        cos_beta_c = np.cos(beta_c_rad)
+        if abs(cos_beta_c) < 1e-6:
+            gcr_effective = gcr * 2.0  # 极端坡度情况
+        else:
+            gcr_effective = gcr / cos_beta_c
+
+        # 遮挡系数计算
+        if shading_margin >= 0:
+            # 即使margin为正，地形坡度仍可能造成遮挡
+            # 根据坡度和GCR计算潜在遮挡
+            terrain_shading_factor = (gcr_effective - gcr) * np.abs(np.sin(beta_c_rad)) * 2.0
+            terrain_shading_factor = np.clip(terrain_shading_factor, 0.0, 0.5)
+
+            # 综合遮挡系数
+            shading_factor = 1.0 - terrain_shading_factor
+
+            # 如果原始margin接近0，进一步降低遮挡系数
+            if shading_margin < 5.0:  # 5度裕度以内
+                margin_penalty = (5.0 - shading_margin) / 5.0 * 0.3
+                shading_factor -= margin_penalty
+
+            return float(np.clip(shading_factor, 0.0, 1.0))
+        else:
+            # margin为负，有明确遮挡
+            base_factor = 1 + shading_margin / self.config.shading_margin_limit
+
+            # 地形坡度加剧遮挡效果
+            terrain_penalty = np.abs(np.sin(beta_c_rad)) * (gcr_effective - gcr) * 0.5
+            shading_factor = base_factor - terrain_penalty
+
+            return float(np.clip(shading_factor, 0.0, 1.0))
+
     def _filter_neighbors(self, neighbors: List[RowNeighbor]) -> List[RowNeighbor]:
         filtered: List[RowNeighbor] = []
         for neighbor in neighbors:
@@ -481,10 +551,32 @@ class TerrainBacktrackingSolver:
                         shading_factor.loc[idx, col] = 1.0 - nrel_shading
         else:
             # 使用简化线性模型
-            negative_margin = np.clip(-margins_df, 0, None)
-            limit = max(self.config.shading_margin_limit, 1e-3)
-            shading_factor = 1.0 - (negative_margin / limit)
-            shading_factor = shading_factor.clip(lower=0.0, upper=1.0).fillna(1.0)
+            if self.config.use_terrain_aware_simple_model:
+                # 使用地形感知的简化模型
+                shading_factor = pd.DataFrame(index=angles_df.index, columns=angles_df.columns, dtype=float)
+
+                for col in angles_df.columns:
+                    gcr = gcr_values.get(col, 0.35)
+                    beta_c = cross_axis_tilts.get(col, 0.0)
+                    margin_series = margins_df[col]
+
+                    for idx in margin_series.index:
+                        margin = margin_series.loc[idx]
+                        if pd.isna(margin):
+                            shading_factor.loc[idx, col] = 1.0
+                        else:
+                            sf = self._calculate_terrain_adjusted_shading(
+                                shading_margin=float(margin),
+                                gcr=gcr,
+                                beta_c=beta_c
+                            )
+                            shading_factor.loc[idx, col] = sf
+            else:
+                # 使用原始简化线性模型
+                negative_margin = np.clip(-margins_df, 0, None)
+                limit = max(self.config.shading_margin_limit, 1e-3)
+                shading_factor = 1.0 - (negative_margin / limit)
+                shading_factor = shading_factor.clip(lower=0.0, upper=1.0).fillna(1.0)
 
         result = BacktrackingResult(
             angles=angles_df,

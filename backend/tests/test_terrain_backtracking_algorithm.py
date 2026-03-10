@@ -631,5 +631,130 @@ class TestTrackerAngleCalculation:
         assert (result.shading_factor <= 1.0).all().all()
 
 
+class TestTerrainAwareSimpleModel:
+    """测试地形感知简化模型"""
+
+    def test_terrain_aware_model_enabled(self):
+        """测试地形感知简化模型启用时的行为"""
+        config = BacktrackingConfig(
+            backtrack=True,
+            use_nrel_shading_fraction=False,
+            use_terrain_aware_simple_model=True,
+            terrain_correction_threshold_deg=0.5,
+        )
+        # 10度坡度，坡度方位角与轴方位角垂直
+        row = create_test_row(slope_deg=10.0, slope_azimuth_deg=270.0)
+
+        neighbors = [
+            create_test_neighbor(
+                neighbor_id=2,
+                cross_axis_distance=5.0,
+                along_axis_distance=0.0,
+                vertical_offset=1.0,
+                relative_position=1
+            )
+        ]
+
+        solver = TerrainBacktrackingSolver(
+            rows=[row],
+            neighbors={1: neighbors},
+            config=config
+        )
+
+        timestamps = pd.date_range('2025-01-01 12:00', periods=3, freq='H')
+        solar_zenith = pd.Series([60.0, 30.0, 60.0], index=timestamps)
+        solar_azimuth = pd.Series([90.0, 180.0, 270.0], index=timestamps)
+
+        result = solver.compute_tracker_angles(solar_zenith, solar_azimuth)
+
+        assert result.shading_factor is not None
+        # 遮挡系数应在0-1范围内
+        assert (result.shading_factor >= 0.0).all().all()
+        assert (result.shading_factor <= 1.0).all().all()
+
+    def test_terrain_aware_model_disabled(self):
+        """测试地形感知简化模型禁用时的行为"""
+        config = BacktrackingConfig(
+            backtrack=True,
+            use_nrel_shading_fraction=False,
+            use_terrain_aware_simple_model=False,
+        )
+        row = create_test_row(slope_deg=10.0, slope_azimuth_deg=270.0)
+
+        neighbors = [
+            create_test_neighbor(
+                neighbor_id=2,
+                cross_axis_distance=5.0,
+                along_axis_distance=0.0,
+                vertical_offset=1.0,
+                relative_position=1
+            )
+        ]
+
+        solver = TerrainBacktrackingSolver(
+            rows=[row],
+            neighbors={1: neighbors},
+            config=config
+        )
+
+        timestamps = pd.date_range('2025-01-01 12:00', periods=3, freq='H')
+        solar_zenith = pd.Series([60.0, 30.0, 60.0], index=timestamps)
+        solar_azimuth = pd.Series([90.0, 180.0, 270.0], index=timestamps)
+
+        result = solver.compute_tracker_angles(solar_zenith, solar_azimuth)
+
+        assert result.shading_factor is not None
+        # 遮挡系数应在0-1范围内
+        assert (result.shading_factor >= 0.0).all().all()
+        assert (result.shading_factor <= 1.0).all().all()
+
+    def test_terrain_correction_with_positive_margin(self):
+        """测试正裕度时的地形修正"""
+        config = BacktrackingConfig(
+            use_terrain_aware_simple_model=True,
+            terrain_correction_threshold_deg=0.5,
+        )
+
+        solver = TerrainBacktrackingSolver(
+            rows=[create_test_row()],
+            neighbors={},
+            config=config
+        )
+
+        # 正裕度，有坡度
+        sf = solver._calculate_terrain_adjusted_shading(
+            shading_margin=5.0,  # 正裕度
+            gcr=0.35,
+            beta_c=5.0  # 5度坡度
+        )
+
+        # 有坡度时，即使正裕度，遮挡系数也应略低于1
+        assert 0.9 <= sf <= 1.0
+
+    def test_terrain_correction_with_negative_margin(self):
+        """测试负裕度时的地形修正"""
+        config = BacktrackingConfig(
+            use_terrain_aware_simple_model=True,
+            terrain_correction_threshold_deg=0.5,
+            shading_margin_limit=10.0,
+        )
+
+        solver = TerrainBacktrackingSolver(
+            rows=[create_test_row()],
+            neighbors={},
+            config=config
+        )
+
+        # 负裕度，有坡度
+        sf = solver._calculate_terrain_adjusted_shading(
+            shading_margin=-5.0,  # 负裕度（有遮挡）
+            gcr=0.35,
+            beta_c=5.0  # 5度坡度
+        )
+
+        # 负裕度时，遮挡系数应小于0.5
+        assert 0.0 <= sf < 0.5
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=app.services.terrain_backtracking"])

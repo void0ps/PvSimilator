@@ -34,6 +34,7 @@ class TrackerRow:
     pile_grounds: List[np.ndarray]
     slope_deg: Optional[float]
     slope_delta_deg: Optional[float]
+    slope_azimuth_deg: Optional[float] = None  # NEW: 坡度的方位角（度）
     notes: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -77,6 +78,7 @@ class TrackerRow:
             "span_length": float(self.span_length),
             "slope_deg": self.slope_deg,
             "slope_delta_deg": self.slope_delta_deg,
+            "slope_azimuth_deg": self.slope_azimuth_deg,
             "average_axis_tilt_deg": self.average_axis_tilt_deg(),
             "axis_azimuth_deg": self.axis_azimuth_deg(),
             "pile_offsets": self.pile_offsets(),
@@ -127,6 +129,7 @@ def build_tracker_rows(layout: Dict[str, Any]) -> List[TrackerRow]:
 
         slope_deg = table.get("table_slope_deg")
         slope_delta = table.get("slope_delta_deg")
+        slope_azimuth = table.get("slope_azimuth_deg")
 
         tracker_rows.append(
             TrackerRow(
@@ -140,6 +143,7 @@ def build_tracker_rows(layout: Dict[str, Any]) -> List[TrackerRow]:
                 pile_grounds=pile_grounds,
                 slope_deg=float(slope_deg) if slope_deg is not None else None,
                 slope_delta_deg=float(slope_delta) if slope_delta is not None else None,
+                slope_azimuth_deg=float(slope_azimuth) if slope_azimuth is not None else None,
                 notes=table.get("notes"),
                 metadata={
                     "table_direction": table.get("table_direction"),
