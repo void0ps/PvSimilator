@@ -213,6 +213,17 @@ namespace PVSimulator.SolarPanel
                         // 调整杆子高度
                         Vector3 meshScale = poleMesh.localScale;
                         poleMesh.localScale = new Vector3(meshScale.x, actualPoleHeight, meshScale.z);
+
+                        // 调试日志：验证杆子容器设置
+                        if (totalCount < 3)
+                        {
+                            Debug.Log($"[SolarPanelGenerator] PoleContainer '{poleContainerObj.name}' parent: {poleContainerObj.transform.parent.name}, rotation: {poleContainerObj.transform.rotation.eulerAngles}");
+                            Debug.Log($"[SolarPanelGenerator] PoleMesh '{poleMesh.name}' localRotation: {poleMesh.localRotation.eulerAngles}, worldRotation: {poleMesh.rotation.eulerAngles}");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[SolarPanelGenerator] 未找到 Pole1 网格！面板将跟随旋转。");
                     }
 
                     // 静态批处理

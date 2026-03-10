@@ -82,6 +82,12 @@ namespace PVSimulator.SolarPanel
                     // 保留原有的 Y 轴旋转（朝向），只修改 X 轴（倾斜角）
                     float yRotation = panel.transform.localEulerAngles.y;
                     panel.transform.localRotation = Quaternion.Euler(currentRotation, yRotation, 0);
+
+                    // 调试日志：验证旋转应用
+                    if (UnityEngine.Time.frameCount % 300 == 0 && panels.IndexOf(panel) == 0)
+                    {
+                        UnityEngine.Debug.Log($"[SolarPanelGroup] {tableId}: Applying rotation X={currentRotation:F1}°, Y={yRotation:F1}° to {panel.name}");
+                    }
                 }
             }
         }
