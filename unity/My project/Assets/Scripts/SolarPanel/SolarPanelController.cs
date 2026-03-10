@@ -719,7 +719,7 @@ namespace PVSimulator.SolarPanel
             float clampedTheta = Mathf.Clamp(theta, -maxAngle, maxAngle);
 
             // 调试日志：验证角度计算
-            if (Time.frameCount % 300 == 0)
+            if (UnityEngine.Time.frameCount % 300 == 0)
             {
                 Debug.Log($"[SolarPanelController] Group {group.tableId}: thetaT={thetaT:F1}°, theta={theta:F1}°, clamped={clampedTheta:F1}°, maxAngle={maxAngle}°");
             }

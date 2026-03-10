@@ -156,6 +156,18 @@ namespace PVSimulator.SolarPanel
                     // 关键：只移动 Pole1 (杆子网格)，保留 Assembly (扭力管) 在旋转容器内
                     // 这样面板围绕扭力管旋转，杆子保持垂直不旋转
 
+                    // 调试：列出预制体实例的直接子对象
+                    if (totalCount == 0)
+                    {
+                        System.Text.StringBuilder childrenList = new System.Text.StringBuilder();
+                        childrenList.Append($"[SolarPanelGenerator] panelInstance '{panelInstance.name}' children: ");
+                        foreach (Transform child in panelInstance.transform)
+                        {
+                            childrenList.Append($"{child.name}, ");
+                        }
+                        Debug.Log(childrenList.ToString());
+                    }
+
                     // 查找 Pole1 的路径（新prefab结构）
                     Transform poleMesh = panelInstance.transform.Find("Structure/Pole/Pole1");
                     if (poleMesh == null)
@@ -174,19 +186,36 @@ namespace PVSimulator.SolarPanel
                         Transform poleContainerTransform = panelInstance.transform.Find("Structure/Pole");
                         if (poleContainerTransform != null)
                         {
+                            // 调试：列出 Pole 容器的子对象
+                            if (totalCount == 0)
+                            {
+                                System.Text.StringBuilder poleChildren = new System.Text.StringBuilder();
+                                poleChildren.Append($"[SolarPanelGenerator] Structure/Pole children: ");
+                                foreach (Transform child in poleContainerTransform)
+                                {
+                                    poleChildren.Append($"{child.name} (hasRenderer={child.GetComponent<Renderer>() != null}), ");
+                                }
+                                Debug.Log(poleChildren.ToString());
+                            }
+
                             poleMesh = poleContainerTransform.Find("Pole1");
                             if (poleMesh == null)
                             {
-                                // 查找第一个包含 Renderer 且名称含 Pole 的子对象
+                                // 查找第一个名称含 Pole 的子对象（即使没有 Renderer）
                                 foreach (Transform child in poleContainerTransform)
                                 {
-                                    if (child.name.Contains("Pole") && child.GetComponent<Renderer>() != null)
+                                    if (child.name.Contains("Pole"))
                                     {
                                         poleMesh = child;
+                                        Debug.Log($"[SolarPanelGenerator] Found pole by name pattern: {child.name}");
                                         break;
                                     }
                                 }
                             }
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[SolarPanelGenerator] Structure/Pole not found in prefab!");
                         }
                     }
 
