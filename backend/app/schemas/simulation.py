@@ -12,18 +12,26 @@ class SimulationBase(BaseModel):
     end_date: datetime = Field(..., description="结束时间")
     time_resolution: str = Field("hourly", description="时间分辨率: hourly, daily, monthly")
     weather_source: str = Field("nasa_sse", description="气象数据源: nasa_sse, meteonorm, custom")
-    
+
     # 模拟配置
     include_shading: bool = Field(False, description="是否包含阴影分析")
     include_soiling: bool = Field(False, description="是否包含污秽损失")
     include_degradation: bool = Field(False, description="是否包含衰减分析")
-    
+    backtrack_enabled: bool = Field(True, description="是否启用地形感知回溯算法")
+
+    # NREL 论文高级参数
+    use_nrel_shading_fraction: bool = Field(False, description="是否使用NREL论文遮挡公式 (Equation 32)")
+    use_nrel_slope_aware_correction: bool = Field(False, description="是否使用NREL斜坡感知修正 (Equations 11-14)")
+    use_partial_shading_model: bool = Field(False, description="是否使用NREL部分遮挡功率模型 (Equation 4)")
+    cells_per_column: int = Field(12, description="每列电池数N (72电池模块N=12)", gt=0)
+    sky_model: str = Field("isotropic", description="天空模型: isotropic, hay, perez")
+
     # 高级参数
     shading_factor: float = Field(0.0, description="阴影损失系数", ge=0, le=1)
     soiling_loss: float = Field(0.0, description="污秽损失系数", ge=0, le=1)
     degradation_rate: float = Field(0.0, description="年衰减率", ge=0, le=0.1)
     obstacles: Optional[List[Dict[str, Any]]] = Field(None, description="障碍物配置")
-    
+
     # 经济参数
     electricity_price: float = Field(0.5, description="电价(元/kWh)", ge=0)
     inflation_rate: float = Field(0.03, description="通胀率", ge=0, le=1)
@@ -39,18 +47,25 @@ class SimulationUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[str] = Field(None, description="状态: pending, running, completed, failed")
     progress: Optional[float] = Field(None, description="进度(0-100)", ge=0, le=100)
-    
+
     # 模拟配置
     include_shading: Optional[bool] = Field(None, description="是否包含阴影分析")
     include_soiling: Optional[bool] = Field(None, description="是否包含污秽损失")
     include_degradation: Optional[bool] = Field(None, description="是否包含衰减分析")
-    
+
+    # NREL 论文高级参数
+    use_nrel_shading_fraction: Optional[bool] = Field(None, description="是否使用NREL论文遮挡公式")
+    use_nrel_slope_aware_correction: Optional[bool] = Field(None, description="是否使用NREL斜坡感知修正")
+    use_partial_shading_model: Optional[bool] = Field(None, description="是否使用NREL部分遮挡功率模型")
+    cells_per_column: Optional[int] = Field(None, description="每列电池数N", gt=0)
+    sky_model: Optional[str] = Field(None, description="天空模型")
+
     # 高级参数
     shading_factor: Optional[float] = Field(None, description="阴影损失系数", ge=0, le=1)
     soiling_loss: Optional[float] = Field(None, description="污秽损失系数", ge=0, le=1)
     degradation_rate: Optional[float] = Field(None, description="年衰减率", ge=0, le=0.1)
     obstacles: Optional[List[Dict[str, Any]]] = Field(None, description="障碍物配置")
-    
+
     # 经济参数
     electricity_price: Optional[float] = Field(None, description="电价(元/kWh)", ge=0)
     inflation_rate: Optional[float] = Field(None, description="通胀率", ge=0, le=1)

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class PVCalculator:
     """光伏系统计算器"""
-    
+
     def __init__(self, latitude: float, longitude: float, altitude: float = 0.0, timezone: str = 'Asia/Shanghai'):
         self.location = location.Location(
             latitude=latitude,
@@ -18,7 +18,113 @@ class PVCalculator:
             altitude=altitude,
             tz=timezone
         )
-        
+
+    def calculate_diffuse_fraction(
+        self,
+        ghi: float,
+        dhi: float
+    ) -> float:
+        """计算漫射辐照度分数 fd = DHI / GHI。
+
+        根据NREL论文，漫射分数用于部分遮挡功率模型 (Equation 4)。
+
+        Args:
+            ghi: 总水平辐照度 (W/m²)
+            dhi: 散射水平辐照度 (W/m²)
+
+        Returns:
+            float: 漫射辐照度分数 (0-1)
+        """
+        if ghi <= 0:
+            return 0.0
+        return min(1.0, dhi / ghi)
+
+    def calculate_diffuse_retention(
+        self,
+        shading_factor: float,
+        sky_model: str = 'isotropic'
+    ) -> float:
+        """基于天空模型计算散射辐射保留率。
+
+        根据NREL论文，阴影区域的散射辐射约为正常值的50-70%。
+        不同天空模型有不同的计算方法。
+
+        Args:
+            shading_factor: 遮挡系数 (0-1, 1表示无遮挡)
+            sky_model: 天空模型类型
+                - 'isotropic': 各向同性模型（默认）
+                - 'hay': Hay模型
+                - 'perez': Perez模型
+
+        Returns:
+            float: 散射辐射保留率 (0.4-1.0)
+        """
+        # 遮挡分数 fs = 1 - shading_factor
+        fs = 1.0 - shading_factor
+
+        if sky_model == 'isotropic':
+            # 各向同性模型: 散射来自天空各方向
+            # 阴影区域仍可接收大部分散射
+            # retention = 未遮挡部分的散射 + 遮挡部分的散射
+            #           = (1-fs) * 1.0 + fs * diffuse_retention_in_shadow
+            diffuse_retention_in_shadow = 0.6  # 阴影区域的散射保留率
+            retention = shading_factor + fs * diffuse_retention_in_shadow
+        elif sky_model == 'hay':
+            # Hay模型: 考虑前向散射
+            # 阴影区域的散射保留率较高
+            diffuse_retention_in_shadow = 0.7
+            retention = shading_factor + fs * diffuse_retention_in_shadow
+        elif sky_model == 'perez':
+            # Perez模型: 更复杂的天空分布
+            diffuse_retention_in_shadow = 0.65
+            retention = shading_factor + fs * diffuse_retention_in_shadow
+        else:
+            retention = 0.6  # 默认保守值
+
+        return max(0.4, min(1.0, retention))
+
+    def calculate_partial_shading_power(
+        self,
+        shading_fraction: float,
+        diffuse_fraction: float,
+        cells_per_column: int = 12
+    ) -> float:
+        """部分遮挡功率损失模型 (NREL 论文 Equation 4)。
+
+        当光伏组件被部分遮挡时，功率损失取决于遮挡比例和
+        电池串的结构。
+
+        根据论文，功率损失模型如下:
+        - 当 fs < 1/N 时（轻度遮挡）: Pnorm = 1 - (1-fd) * fs * N
+        - 当 fs >= 1/N 时（重度遮挡）: Pnorm = fd
+
+        Args:
+            shading_fraction: 遮挡分数 fs (0-1, 被遮挡的面积比例)
+            diffuse_fraction: 漫射辐照度分数 fd = DHI / GHI
+            cells_per_column: 每列电池数 N (72电池模块 N=12, 96电池模块 N=16)
+
+        Returns:
+            float: 归一化功率 Pnorm (0-1)
+        """
+        fs = shading_fraction
+        fd = diffuse_fraction
+        N = cells_per_column
+
+        # 数值稳定性检查
+        if N <= 0:
+            N = 12  # 默认值
+
+        if fs < 1.0 / N:
+            # 轻度遮挡: 功率损失与遮挡面积成正比
+            # Pnorm = 1 - (1-fd) * fs * N
+            pnorm = 1.0 - (1.0 - fd) * fs * N
+        else:
+            # 重度遮挡: 功率仅等于漫射分量
+            # 此时旁路二极管激活，被遮挡的电池串被旁路
+            pnorm = fd
+
+        return max(0.0, min(1.0, pnorm))
+
     def calculate_solar_position(self, times: pd.DatetimeIndex) -> pd.DataFrame:
         """计算太阳位置"""
         return self.location.get_solarposition(times)
@@ -58,16 +164,44 @@ class PVCalculator:
         
         return irradiance
     
-    def calculate_pv_power(self, irradiance: pd.DataFrame, 
+    def calculate_pv_power(self, irradiance: pd.DataFrame,
                           module_params: Dict[str, Any],
                           inverter_params: Dict[str, Any],
                           temperature_ambient: pd.Series,
                           shading_factor: float = 0.0,
                           shading_factors: Optional[pd.Series] = None,
                           soiling_loss: float = 0.0,
-                          degradation_rate: float = 0.0) -> pd.DataFrame:
-        """计算光伏发电功率，考虑阴影、污秽和衰减损失"""
-        
+                          degradation_rate: float = 0.0,
+                          # NEW: NREL 论文参数
+                          use_partial_shading_model: bool = False,
+                          ghi: Optional[pd.Series] = None,
+                          dhi: Optional[pd.Series] = None,
+                          cells_per_column: int = 12,
+                          sky_model: str = 'isotropic') -> pd.DataFrame:
+        """计算光伏发电功率，考虑阴影、污秽和衰减损失。
+
+        支持两种模式：
+        1. 简单模式（默认）: 使用线性遮挡模型
+        2. NREL 论文模式（use_partial_shading_model=True）: 使用部分遮挡功率模型 (Equation 4)
+
+        Args:
+            irradiance: 斜面辐照度数据
+            module_params: 组件参数
+            inverter_params: 逆变器参数
+            temperature_ambient: 环境温度序列
+            shading_factor: 固定阴影损失系数
+            shading_factors: 时变阴影系数序列
+            soiling_loss: 污秽损失系数
+            degradation_rate: 衰减率
+            use_partial_shading_model: 是否使用 NREL 部分遮挡功率模型
+            ghi: 总水平辐照度（用于计算 fd）
+            dhi: 散射水平辐照度（用于计算 fd）
+            cells_per_column: 每列电池数 N（72电池模块 N=12）
+            sky_model: 天空模型（isotropic, hay, perez）
+
+        Returns:
+            pd.DataFrame: 发电功率计算结果
+        """
         irradiance = irradiance.copy()
 
         # 计算阴影乘数（0-1，1表示无阴影损失）
@@ -81,9 +215,55 @@ class PVCalculator:
             multiplier = max(0.0, min(1.0, 1 - shading_factor)) if shading_factor > 0 else 1.0
             shading_multiplier = pd.Series(multiplier, index=irradiance.index)
 
-        irradiance['poa_global'] = irradiance['poa_global'] * shading_multiplier
-        irradiance['poa_direct'] = irradiance['poa_direct'] * shading_multiplier
-        irradiance['poa_diffuse'] = irradiance['poa_diffuse'] * shading_multiplier
+        # 保存原始值用于计算
+        poa_direct_orig = irradiance['poa_direct'].copy()
+        poa_diffuse_orig = irradiance['poa_diffuse'].copy()
+
+        # 计算散射辐射保留率（基于天空模型）
+        # 使用向量化的方式处理
+        diffuse_retention_series = shading_multiplier.apply(
+            lambda sf: self.calculate_diffuse_retention(sf, sky_model)
+        )
+
+        if use_partial_shading_model and ghi is not None and dhi is not None:
+            # 使用 NREL 论文部分遮挡功率模型 (Equation 4)
+            # 计算漫射分数 fd
+            ghi_aligned = ghi.reindex(irradiance.index).fillna(0)
+            dhi_aligned = dhi.reindex(irradiance.index).fillna(0)
+
+            # 对直接辐射应用完整遮挡系数
+            irradiance['poa_direct'] = poa_direct_orig * shading_multiplier
+
+            # 对散射辐射应用部分遮挡
+            irradiance['poa_diffuse'] = poa_diffuse_orig * diffuse_retention_series
+
+            # 计算遮挡分数 fs = 1 - shading_multiplier
+            shading_fraction = 1.0 - shading_multiplier
+
+            # 计算归一化功率系数 (Equation 4)
+            power_normalization = pd.Series(index=irradiance.index, dtype=float)
+            for idx in irradiance.index:
+                fd = self.calculate_diffuse_fraction(
+                    float(ghi_aligned.loc[idx]),
+                    float(dhi_aligned.loc[idx])
+                )
+                fs = float(shading_fraction.loc[idx])
+                pnorm = self.calculate_partial_shading_power(fs, fd, cells_per_column)
+                power_normalization.loc[idx] = pnorm
+
+        else:
+            # 使用传统线性遮挡模型
+            # 对直接辐射应用完整遮挡系数
+            irradiance['poa_direct'] = poa_direct_orig * shading_multiplier
+
+            # 对散射辐射应用部分遮挡
+            diffuse_factor = diffuse_retention_series
+            irradiance['poa_diffuse'] = poa_diffuse_orig * diffuse_factor
+
+            power_normalization = pd.Series(1.0, index=irradiance.index)
+
+        # 重新计算总辐射
+        irradiance['poa_global'] = irradiance['poa_direct'] + irradiance['poa_diffuse']
         
         # 应用污秽损失
         if soiling_loss > 0:
@@ -111,10 +291,13 @@ class PVCalculator:
             temp_diff = module_temp - 25
             power_temp_coeff = module_params.get('gamma_pdc', -0.004)
             temp_correction = 1 + power_temp_coeff * temp_diff
-            
+
             # 计算直流功率
             pdc0 = module_params.get('pdc0', 400)
             dc_power = pdc0 * effective_irradiance * temp_correction
+
+            # 应用部分遮挡功率归一化 (NREL Equation 4)
+            dc_power = dc_power * power_normalization
             
             # 使用Sandia逆变器模型计算交流功率
             paco = inverter_params.get('Paco', 5000)
@@ -172,10 +355,13 @@ class PVCalculator:
             logger.error(f"使用pvlib底层函数计算发电功率失败: {e}")
             # 使用简化的估算方法作为后备方案
             logger.warning("使用简化的发电功率估算方法")
-            
+
             # 简化的直流功率估算
             dc_power = irradiance['poa_global'] * module_params.get('pdc0', 400) / 1000
-            
+
+            # 应用部分遮挡功率归一化 (NREL Equation 4)
+            dc_power = dc_power * power_normalization
+
             # 简化的交流功率估算（考虑逆变器效率）
             inverter_efficiency = 0.95  # 默认效率95%
             try:
@@ -190,7 +376,7 @@ class PVCalculator:
                         ac_power[low_mask] = dc_power[low_mask] * inverter_efficiency
             except Exception:
                 ac_power = dc_power * inverter_efficiency
-            
+
             # 简化的模块温度估算
             module_temp = temperature_ambient + irradiance['poa_global'] * 0.03
         
