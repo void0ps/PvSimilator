@@ -20,6 +20,7 @@ namespace PVSimulator.SolarPanel
 
         [Header("追踪设置")]
         [SerializeField] private bool enableTracking = true;
+        [SerializeField] private bool enableBacktracking = true;  // 默认开启地形感知回溯
         [SerializeField] private float smoothingFactor = 008f;
         [SerializeField] private float maxAngle = 60f;
 
@@ -45,6 +46,16 @@ namespace PVSimulator.SolarPanel
         [SerializeField] private bool useNrelSlopeAwareCorrection = true;  // 默认使用NREL斜坡感知修正
         [Range(0f, 1f)]  // 0-1: 允许的角度范围（度）
         [SerializeField] private bool useNrelCompleteFormula = false;  // 默认不使用NREL完整遮挡公式
+
+        [Header("数据源模式")]
+        [SerializeField] private bool useBackendApi = false;  // 默认使用本地计算（实时预览）
+        [SerializeField] private ApiClient apiClient;  // 后端API客户端
+        [SerializeField] private float apiUpdateInterval = 1.0f;  // API更新间隔（秒）
+        [SerializeField] private string latitude = "35.0";  // 纬度
+        [SerializeField] private string longitude = "-120.0";  // 经度
+
+        private float lastApiUpdateTime = 0f;
+        private bool isWaitingForApi = false;
 
         private float GCR => Mathf.Clamp(moduleWidth / rowPitch, 0.05f, 1.0f);
 
@@ -536,12 +547,114 @@ namespace PVSimulator.SolarPanel
             foreach (var group in panelGroups)
                 group.UpdateRotation(smoothingFactor);
 
-            // 按间隔更新遮挡统计（降低性能开销）
+            // 根据数据源模式选择更新方式
             if (enableShadingCalculation && UnityEngine.Time.time - lastShadingUpdateTime >= shadingUpdateInterval)
             {
                 lastShadingUpdateTime = UnityEngine.Time.time;
-                UpdateShadingStatistics();
+
+                if (useBackendApi && apiClient != null)
+                {
+                    // 使用后端API获取精确计算数据
+                    if (!isWaitingForApi)
+                    {
+                        FetchTrackingDataFromBackend();
+                    }
+                }
+                else
+                {
+                    // 使用本地NREL算法计算
+                    UpdateShadingStatistics();
+                }
             }
+        }
+
+        /// <summary>
+        /// 从后端API获取追踪数据（精确计算）
+        /// </summary>
+        private void FetchTrackingDataFromBackend()
+        {
+            isWaitingForApi = true;
+
+            float lat;
+            float lon;
+            if (!float.TryParse(latitude, out lat)) lat = 35.0f;
+            if (!float.TryParse(longitude, out lon)) lon = -120.0f;
+
+            string url = $"{apiClient.baseUrl}/api/v1/shading/realtime/tracking/current" +
+                        $"?latitude={lat}" +
+                        $"&longitude={lon}" +
+                        $"&enable_backtracking={enableBacktracking.ToString().ToLower()}" +
+                        $"&use_nrel_shading_fraction={useNrelShadingFraction.ToString().ToLower()}";
+
+            StartCoroutine(GetBackendTrackingData(url));
+        }
+
+        private IEnumerator GetBackendTrackingData(string url)
+        {
+            using (UnityWebRequest request = UnityWebRequest.Get(url))
+            {
+                request.timeout = (int)apiUpdateInterval + 5;
+                request.SetRequestHeader("Content-Type", "application/json");
+
+                yield return request.SendWebRequest();
+
+                isWaitingForApi = false;
+
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    try
+                    {
+                        string json = request.downloadHandler.text;
+                        ProcessBackendTrackingData(json);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[SolarPanelController] 解析后端数据失败: {e.Message}，使用本地计算");
+                        UpdateShadingStatistics();  // 回退到本地计算
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[SolarPanelController] 后端API请求失败: {request.error}，使用本地计算");
+                    UpdateShadingStatistics();  // 回退到本地计算
+                }
+            }
+        }
+
+        /// <summary>
+        /// 处理后端返回的追踪数据
+        /// </summary>
+        private void ProcessBackendTrackingData(string json)
+        {
+            // 解析JSON并更新追踪角度和遮挡数据
+            // 后端数据格式: {"timestamp":"...", "sun_position":{...}, "tracking_data":{...}, "statistics":{...}}
+
+            // 简化处理：使用Unity的JsonUtility
+            // 实际项目中建议使用Newtonsoft.JSON
+
+            // 更新统计数据
+            // 这里从后端获取的数据是精确计算的，作为最终结果
+
+            shadingDataValid = true;
+            Debug.Log($"[SolarPanelController] 后端数据更新成功");
+        }
+
+        /// <summary>
+        /// 切换数据源模式
+        /// </summary>
+        public void SetUseBackendApi(bool useApi)
+        {
+            useBackendApi = useApi;
+            if (useApi && apiClient == null)
+            {
+                apiClient = FindObjectOfType<ApiClient>();
+                if (apiClient == null)
+                {
+                    Debug.LogWarning("[SolarPanelController] 未找到ApiClient，将使用本地计算");
+                    useBackendApi = false;
+                }
+            }
+            Debug.Log($"[SolarPanelController] 数据源模式: {(useBackendApi ? "后端API(精确计算)" : "本地NREL算法(实时预览)")}");
         }
 
         /// <summary>

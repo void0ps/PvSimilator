@@ -1,14 +1,16 @@
 """优化的遮挡数据API - 支持分页和聚合"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
+from pydantic import BaseModel
 import pandas as pd
 import numpy as np
+import pvlib
 
 from app.core.database import get_db
 from app.schemas.pagination import (
-    PaginationParams, 
+    PaginationParams,
     PaginatedResponse,
     TimeSeriesAggregationParams,
     ShadingDataAggregation,
@@ -17,9 +19,136 @@ from app.schemas.pagination import (
 )
 from app.services.terrain_service import terrain_service
 from app.services.tracker_geometry import build_tracker_rows
+from app.services.tracker_analysis import find_row_neighbors
 from app.services.bay_extractor import extract_all_bays
+from app.services.terrain_backtracking import TerrainBacktrackingSolver, BacktrackingConfig
 
 router = APIRouter()
+
+
+class RealtimeTrackingRequest(BaseModel):
+    """实时追踪请求"""
+    latitude: float = 35.0
+    longitude: float = -120.0
+    timezone: float = -8.0
+    datetime_utc: str  # ISO格式时间
+    enable_backtracking: bool = True
+    use_nrel_shading_fraction: bool = True
+
+
+class RealtimeTrackingResponse(BaseModel):
+    """实时追踪响应"""
+    timestamp: str
+    sun_position: Dict[str, float]
+    tracking_data: Dict[str, Dict[str, float]]
+    statistics: Dict[str, float]
+
+
+@router.post("/realtime/tracking", response_model=RealtimeTrackingResponse)
+async def get_realtime_tracking(request: RealtimeTrackingRequest):
+    """
+    实时获取追踪角度和遮挡数据（供Unity前端调用）
+
+    后端做精确计算，前端做3D可视化
+    """
+    try:
+        # 解析时间
+        dt = pd.to_datetime(request.datetime_utc)
+        times = pd.DatetimeIndex([dt])
+
+        # 计算太阳位置
+        solpos = pvlib.solarposition.get_solarposition(
+            times, request.latitude, request.longitude
+        )
+        solar_zenith = solpos['apparent_zenith'].iloc[0]
+        solar_azimuth = solpos['azimuth'].iloc[0]
+        solar_elevation = 90 - solar_zenith
+
+        # 加载地形数据
+        layout = terrain_service.load_layout()
+        rows = build_tracker_rows(layout)
+        neighbors = find_row_neighbors(rows)
+
+        # 配置回溯参数
+        config = BacktrackingConfig(
+            module_width=2.0,
+            backtrack=request.enable_backtracking,
+            use_nrel_shading_fraction=request.use_nrel_shading_fraction,
+        )
+
+        # 计算追踪角度
+        solver = TerrainBacktrackingSolver(rows, neighbors, config)
+        result = solver.compute_tracker_angles(
+            pd.Series([solar_zenith]),
+            pd.Series([solar_azimuth])
+        )
+
+        # 构建响应数据
+        tracking_data = {}
+        total_sf = 0
+        min_sf = 1.0
+        shaded_count = 0
+
+        for table_id in result.angles.keys():
+            angle = result.angles[table_id].iloc[0]
+            sf = result.shading_factor[table_id].iloc[0]
+            margin = result.shading_margin[table_id].iloc[0]
+
+            tracking_data[str(table_id)] = {
+                "angle": float(angle),
+                "shading_factor": float(sf),
+                "shading_margin": float(margin)
+            }
+
+            total_sf += sf
+            if sf < min_sf:
+                min_sf = sf
+            if sf < 1.0:
+                shaded_count += 1
+
+        count = len(tracking_data)
+        avg_sf = total_sf / count if count > 0 else 1.0
+
+        return RealtimeTrackingResponse(
+            timestamp=request.datetime_utc,
+            sun_position={
+                "zenith": float(solar_zenith),
+                "azimuth": float(solar_azimuth),
+                "elevation": float(solar_elevation)
+            },
+            tracking_data=tracking_data,
+            statistics={
+                "average_shading_factor": float(avg_sf),
+                "min_shading_factor": float(min_sf),
+                "shaded_row_count": shaded_count,
+                "total_row_count": count,
+                "energy_loss_percent": float((1 - avg_sf) * 100)
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"实时追踪计算失败: {str(e)}")
+
+
+@router.get("/realtime/tracking/current", response_model=RealtimeTrackingResponse)
+async def get_current_tracking(
+    latitude: float = Query(35.0, description="纬度"),
+    longitude: float = Query(-120.0, description="经度"),
+    enable_backtracking: bool = Query(True, description="是否启用回溯"),
+    use_nrel_shading_fraction: bool = Query(True, description="是否使用NREL遮挡公式")
+):
+    """
+    获取当前时刻的追踪数据（使用服务器当前时间）
+    """
+    request = RealtimeTrackingRequest(
+        latitude=latitude,
+        longitude=longitude,
+        timezone=-8.0,
+        datetime_utc=datetime.utcnow().isoformat(),
+        enable_backtracking=enable_backtracking,
+        use_nrel_shading_fraction=use_nrel_shading_fraction
+    )
+    return await get_realtime_tracking(request)
 
 
 @router.get("/bays/summary", response_model=List[BaySummary])
