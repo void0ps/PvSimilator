@@ -1,4 +1,6 @@
+# ============================================
 # Python
+# ============================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,106 +21,186 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.manifest
+*.spec
 
-# Testing
+# ============================================
+# Testing & Coverage
+# ============================================
 .coverage
 .pytest_cache/
 htmlcov/
 .tox/
 .nox/
+coverage.xml
+*.cover
+.hypothesis/
 
+# ============================================
 # Virtual Environment
+# ============================================
 venv/
 env/
 ENV/
-.venv
+.venv/
 env.bak/
 venv.bak/
 
-# IDE
+# ============================================
+# IDE & Editors
+# ============================================
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+*.sublime-workspace
+*.sublime-project
 
-# Environment variables
+# ============================================
+# Environment Variables
+# ============================================
 .env
 .env.local
 .env.*.local
 *.local
 
-# Node
+# ============================================
+# Node.js / Frontend
+# ============================================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 dist-ssr/
+frontend/dist/
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# OS
+# ============================================
+# OS Generated Files
+# ============================================
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
 desktop.ini
+ehthumbs.db
+*.stackdump
 
+# ============================================
 # Logs
+# ============================================
 logs/
 *.log
 
-# Build outputs
+# ============================================
+# Build Outputs
+# ============================================
 build/
 dist/
 
-# Temporary files
+# ============================================
+# Temporary Files
+# ============================================
 *.tmp
 *.temp
 *.bak
 *.swp
 *.swo
 *~
+nul
 
-# Test files
-test_*.py
-*_test.py
-check_*.py
-*_test.db
-test_*.db
+# ============================================
+# Backend - Validation & Test Scripts (generated)
+# ============================================
+backend/run_*.py
+backend/validate_*.py
+backend/simple_validation.py
+backend/debug_*.py
+backend/analyze_*.py
+backend/add_*.py
+backend/*_result.json
+backend/api_validation_result.json
+backend/backtracking_validation_result.json
+backend/real_simulation_validation_result.json
+backend/simple_validation_result.json
+backend/true_backtracking_validation_result.json
+backend/validation_result.json
 
-# Data files (keep structure, ignore content)
+# Keep actual test files
+!backend/tests/
+!backend/app/**/test_*.py
+
+# Backend data directories
 backend/data/*.db
 backend/data/*.txt
 backend/uploads/*
 !backend/data/.gitkeep
 !backend/uploads/.gitkeep
-
-# Analysis output
 backend/analysis/
 terrain_output.txt
 
-# Scripts (keep only essential)
-backend/scripts/*.py
-!backend/scripts/__init__.py
+# ============================================
+# Unity Project
+# ============================================
+# Unity generated folders (LARGE - DO NOT COMMIT)
+unity/**/Library/
+unity/**/Temp/
+unity/**/obj/
+unity/**/Obj/
+unity/**/Build/
+unity/**/Builds/
+unity/**/Logs/
+unity/**/UserSettings/
+unity/**/MemoryCaptures/
 
-# Documentation duplicates (keep only in docs/)
+# Unity Visual Studio / Rider
+unity/**/.vs/
+unity/**/*.csproj
+unity/**/*.sln
+unity/**/*.suo
+unity/**/*.user
+unity/**/*.userprefs
+unity/**/*.pidb
+unity/**/*.booproj
+unity/**/*.svd
+unity/**/*.pdb
+unity/**/*.mdb
+unity/**/*.opendb
+unity/**/*.VC.db
+
+# Unity build artifacts
+unity/**/*.apk
+unity/**/*.aab
+unity/**/*.app
+unity/**/*.exe
+unity/**/*.unitypackage
+
+# Unity other
+unity/**/UpgradeLog.htm
+unity/**/*.log
+
+# ============================================
+# Docker (keep config, ignore runtime)
+# ============================================
+.docker/
+
+# ============================================
+# Claude Code
+# ============================================
+.claude/
+
+# ============================================
+# Documentation - Keep only main docs
+# ============================================
 *.pdf.md
 backend/*.md
 frontend/*.md
+unity/DEVELOPMENT.md
 !README.md
 !docs/**/*.md
 
-# Excel data (large file, should be in .gitignore)
-*.xlsx
-
-# Logs
-*.log
-logs/
-
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
+# ============================================
+# Keep essential scripts
+# ============================================
+!backend/scripts/__init__.py

@@ -117,21 +117,29 @@ namespace PVSimulator.SolarPanel
                     float terrainOffset = (ground - groundCenter) * heightScale;
                     float y = terrainOffset + fixedPoleHeight;
 
-                    // 桩子底部和顶部位置
+                    // 桩子底部位置（地面高度）
                     float poleBottomY = terrainOffset;
-                    float poleTopY = y - panelSize.y / 2;
-                    float actualPoleHeight = poleTopY - poleBottomY;
+
+                    // 计算扭力管（旋转轴）位置
+                    // 扭力管在地面上方 fixedPoleHeight 高度
+                    float torqueTubeY = terrainOffset + fixedPoleHeight;
+
+                    // 桩子高度 = 扭力管高度 - 地面高度
+                    float actualPoleHeight = torqueTubeY - poleBottomY;
                     if (actualPoleHeight < 0.1f) actualPoleHeight = 0.1f;
 
-                    // 创建面板容器（会被旋转）
+                    // 创建面板容器（旋转中心在扭力管位置）
+                    // 容器位置在扭力管高度
                     GameObject panelContainer = new GameObject($"PanelContainer_{table.table_id}_{totalCount}");
                     panelContainer.transform.parent = rowContainer.transform;
-                    panelContainer.transform.localPosition = new Vector3(x, y, z);
+                    panelContainer.transform.localPosition = new Vector3(x, torqueTubeY, z);
                     panelContainer.transform.localRotation = Quaternion.Euler(0, table.axis_azimuth, 0);
 
                     // 实例化预制体（包含 Panel 和 Pole）
+                    // 由于预制体中 Panel 在中心位置 (0,0,0)，需要让整个实例向下偏移半个面板高度
+                    // 这样 Panel 的顶部就在扭力管位置（容器原点）
                     GameObject panelInstance = Instantiate(solarPanelPrefab, panelContainer.transform);
-                    panelInstance.transform.localPosition = Vector3.zero;
+                    panelInstance.transform.localPosition = new Vector3(0, -panelSize.y / 2f, 0);
                     panelInstance.transform.localRotation = Quaternion.identity;
                     panelInstance.SetActive(true);
 
@@ -139,31 +147,35 @@ namespace PVSimulator.SolarPanel
                     Transform poleInPrefab = panelInstance.transform.Find("Pole");
                     if (poleInPrefab != null)
                     {
-                        // 保存 Pole 的本地信息
-                        Vector3 poleLocalPos = poleInPrefab.localPosition;
-                        Quaternion poleLocalRot = poleInPrefab.localRotation;
-                        Vector3 poleLocalScale = poleInPrefab.localScale;
+                        // 先保存扭力管的世界位置
+                        Vector3 torqueTubeWorldPos = panelContainer.transform.position;
 
                         // 移到 rowContainer（跳出旋转的容器）
                         poleInPrefab.SetParent(rowContainer.transform, false);
 
-                        // 计算杆子在场景中的实际位置
-                        // 杆子的本地位置是相对于面板的，需要转换到世界坐标
-                        Vector3 poleWorldPos = panelContainer.transform.TransformPoint(poleLocalPos);
-                        poleInPrefab.position = poleWorldPos;
+                        // 杆子容器位置 = 扭力管位置（杆子顶部在扭力管）
+                        poleInPrefab.position = torqueTubeWorldPos;
 
-                        // 设置杆子朝向（与面板朝向一致，但不跟随面板倾斜）
+                        // 设置杆子朝向（垂直）
                         poleInPrefab.rotation = Quaternion.Euler(0, table.axis_azimuth, 0);
 
                         // 调整杆子内部的 Cube 高度
+                        // 关键：Cube 顶部在容器原点（扭力管位置），向下延伸到地面
                         Transform poleCube = poleInPrefab.Find("Cube");
                         if (poleCube != null)
                         {
                             poleCube.localScale = new Vector3(poleSize.x, actualPoleHeight, poleSize.z);
-                            poleCube.localPosition = new Vector3(0, actualPoleHeight / 2f, 0);
+                            // Cube 中心向下偏移半个高度，使 Cube 顶部在原点（扭力管位置）
+                            poleCube.localPosition = new Vector3(0, -actualPoleHeight / 2f, 0);
                         }
 
                         poleInPrefab.name = $"Pole_{table.table_id}_{totalCount}";
+
+                        // 调试：验证杆子顶部在扭力管位置
+                        if (totalCount <= 3)
+                        {
+                            Debug.Log($"[SolarPanelGenerator] PanelContainer位置: {panelContainer.transform.position}, Pole位置: {poleInPrefab.position}");
+                        }
                     }
 
                     // 静态批处理
@@ -192,13 +204,16 @@ namespace PVSimulator.SolarPanel
         private GameObject CreateSimplePanelPrefab()
         {
             // 创建预制体根对象
+            // 预制体根位于扭力管中心（面板底边），这样旋转时面板底边位置不变
             GameObject prefabRoot = new GameObject("PanelPrefab");
 
-            // 1. 创建面板 (在原点)
+            // 1. 创建面板
+            // 面板中心相对于扭力管向下偏移半个面板厚度
+            // 这样旋转容器的原点在面板底边（扭力管位置），旋转时底边不动
             GameObject panel = GameObject.CreatePrimitive(PrimitiveType.Cube);
             panel.name = "Panel";
             panel.transform.SetParent(prefabRoot.transform);
-            panel.transform.localPosition = Vector3.zero;
+            panel.transform.localPosition = new Vector3(0, -panelSize.y / 2f, 0);  // 关键：向下偏移
             panel.transform.localRotation = Quaternion.identity;
             panel.transform.localScale = panelSize;
 
@@ -215,17 +230,17 @@ namespace PVSimulator.SolarPanel
             }
 
             // 2. 创建杆子（会从预制体中移出，不跟随旋转）
+            // 杆子顶部在扭力管位置（即旋转容器的原点）
             GameObject poleContainer = new GameObject("Pole");
             poleContainer.transform.SetParent(prefabRoot.transform);
 
             GameObject poleCube = GameObject.CreatePrimitive(PrimitiveType.Cube);
             poleCube.name = "Cube";
             poleCube.transform.SetParent(poleContainer.transform);
-            poleCube.transform.localPosition = new Vector3(0, 0.5f, 0);
+            poleCube.transform.localPosition = new Vector3(0, 0.5f, 0);  // Cube中心在(0, 0.5, 0)，底部在原点
 
-            // 杆子位置：在面板正下方
-            float poleY = -panelSize.y / 2f;
-            poleContainer.transform.localPosition = new Vector3(0, poleY, 0);
+            // 杆子位置：顶部在扭力管位置（原点）
+            poleContainer.transform.localPosition = Vector3.zero;  // 杆子顶部在旋转中心
             poleContainer.transform.localScale = new Vector3(poleSize.x, 1f, poleSize.z);
 
             var poleRenderer = poleCube.GetComponent<MeshRenderer>();
