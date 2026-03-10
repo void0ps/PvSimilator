@@ -265,7 +265,6 @@ namespace PVSimulator.UI
             if (panelController != null)
             {
                 panelController.SetShadingCalculationEnabled(true);
-                Debug.Log("[SimulationUI] 初始化：强制开启遮挡计算");
             }
         }
 
@@ -401,7 +400,6 @@ namespace PVSimulator.UI
             // 反向追踪开关
             if (panelController != null)
                 panelController.SetBacktrackingEnabled(enabled);
-            Debug.Log("[SimulationUI] 地形感知回溯: " + (enabled ? "启用" : "禁用"));
         }
 
         private void OnShadingPanelToggleChanged(bool enabled)
@@ -416,7 +414,6 @@ namespace PVSimulator.UI
             // 开启/关闭遮挡计算
             if (panelController != null)
                 panelController.SetShadingCalculationEnabled(enabled);
-            Debug.Log("[SimulationUI] 遮挡计算: " + (enabled ? "启用" : "禁用"));
         }
 
         private void OnHeatmapToggleChanged(bool enabled)
@@ -424,7 +421,6 @@ namespace PVSimulator.UI
             // 开启/关闭热力图
             if (shadingHeatmap != null)
                 shadingHeatmap.SetHeatmapEnabled(enabled);
-            Debug.Log("[SimulationUI] 热力图: " + (enabled ? "启用" : "禁用"));
         }
 
         private void OnTerrainToggleChanged(bool enabled)
@@ -432,7 +428,6 @@ namespace PVSimulator.UI
             // 显示/隐藏地形
             if (terrainGenerator != null)
                 terrainGenerator.SetTerrainVisible(enabled);
-            Debug.Log("[SimulationUI] 地形显示: " + (enabled ? "启用" : "禁用"));
         }
 
         private void OnTerrainHeatmapToggleChanged(bool enabled)
@@ -443,7 +438,6 @@ namespace PVSimulator.UI
                 terrainGenerator.enableHeightHeatmap = enabled;
                 terrainGenerator.UpdateHeatmapColors();
             }
-            Debug.Log("[SimulationUI] 地形高度热力图: " + (enabled ? "启用" : "禁用"));
         }
 
         #region 数据导出
@@ -566,22 +560,12 @@ namespace PVSimulator.UI
         private void UpdateShadingDisplay()
         {
             if (panelController == null)
-            {
-                Debug.LogWarning("[SimulationUI] panelController 为空，无法更新遮挡显示");
                 return;
-            }
 
             var stats = panelController.GetStatistics();
 
             // 检查是否有有效数据（只要有行数就显示）
             bool hasData = stats.totalRows > 0;
-            bool sunValid = stats.isValid;  // 太阳是否在地平线以上
-
-            // 调试输出
-            if (UnityEngine.Time.frameCount % 60 == 0)
-            {
-                Debug.Log($"[SimulationUI] 遮挡显示更新: hasData={hasData}, sunValid={sunValid}, totalRows={stats.totalRows}, sf={stats.averageShadingFactor:F2}, angle={stats.averageAngle:F1}");
-            }
 
             // 更新遮挡统计文本
             if (shadingStatsText != null)

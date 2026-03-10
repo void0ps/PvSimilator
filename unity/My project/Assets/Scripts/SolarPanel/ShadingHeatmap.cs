@@ -8,6 +8,10 @@ namespace PVSimulator.SolarPanel
     /// </summary>
     public class ShadingHeatmap : MonoBehaviour
     {
+        // Shader属性ID缓存（避免字符串查找）
+        private static readonly int BaseColorID = Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorID = Shader.PropertyToID("_Color");
+
         [ContextMenu("手动初始化")]
         private void ContextMenuInitialize()
         {
@@ -35,12 +39,17 @@ namespace PVSimulator.SolarPanel
             {
                 if (renderer != null)
                 {
-                    propertyBlock.SetColor("_BaseColor", Color.red);
-                    renderer.SetPropertyBlock(propertyBlock);
+                    SetRendererColor(renderer, Color.red);
                     count++;
                 }
             }
-            Debug.Log($"[ShadingHeatmap] 已将 {count} 个面板设为红色（使用 PropertyBlock）");
+
+            // 输出第一个渲染器的材质信息用于调试
+            if (allRenderers.Count > 0 && allRenderers[0] != null)
+            {
+                var mat = allRenderers[0].sharedMaterial;
+                Debug.Log($"[ShadingHeatmap] 第一个渲染器材质: {mat?.name ?? "null"}, shader: {mat?.shader?.name ?? "null"}");
+            }
         }
 
         [ContextMenu("测试：全部变绿")]
@@ -53,17 +62,13 @@ namespace PVSimulator.SolarPanel
             }
             if (propertyBlock == null) propertyBlock = new MaterialPropertyBlock();
 
-            int count = 0;
             foreach (var renderer in allRenderers)
             {
                 if (renderer != null)
                 {
-                    propertyBlock.SetColor("_BaseColor", Color.green);
-                    renderer.SetPropertyBlock(propertyBlock);
-                    count++;
+                    SetRendererColor(renderer, Color.green);
                 }
             }
-            Debug.Log($"[ShadingHeatmap] 已将 {count} 个面板设为绿色（使用 PropertyBlock）");
         }
 
         [ContextMenu("重置为深蓝色")]
@@ -151,13 +156,59 @@ namespace PVSimulator.SolarPanel
                 {
                     if (panel != null)
                     {
-                        // 先尝试在面板本身找 Renderer
-                        var renderer = panel.GetComponent<Renderer>();
+                        // panel是panelContainer，需要在其子对象中找prefab实例
+                        // 然后在prefab实例中找面板主体的Renderer
+                        Renderer renderer = null;
 
-                        // 如果没有，尝试在子对象中找（支持复杂预制体结构）
+                        // 遍历panelContainer的直接子对象（prefab实例）
+                        foreach (Transform prefabInstance in panel.transform)
+                        {
+                            // 方案1：新prefab结构 - Panel/Solar_Panel1/Mesh9
+                            Transform panelBody = prefabInstance.Find("Panel/Solar_Panel1/Mesh9");
+                            if (panelBody != null)
+                            {
+                                renderer = panelBody.GetComponent<Renderer>();
+                                if (renderer != null) break;
+                            }
+
+                            // 方案2：尝试找名为"Mesh4"的对象（旧prefab的面板主体）
+                            panelBody = prefabInstance.Find("Mesh4");
+                            if (panelBody != null)
+                            {
+                                renderer = panelBody.GetComponent<Renderer>();
+                                if (renderer != null) break;
+                            }
+
+                            // 方案3：查找名为"Panel"的对象（自定义简单prefab的面板主体）
+                            panelBody = prefabInstance.Find("Panel");
+                            if (panelBody != null)
+                            {
+                                renderer = panelBody.GetComponent<Renderer>();
+                                if (renderer != null) break;
+                            }
+
+                            // 方案4：查找包含"Mesh"但不包含"Pole"/"Tube"的对象
+                            foreach (Transform child in prefabInstance)
+                            {
+                                if (child.name.StartsWith("Mesh") &&
+                                    !child.name.Contains("Pole") &&
+                                    !child.name.Contains("Tube"))
+                                {
+                                    renderer = child.GetComponent<Renderer>();
+                                    if (renderer != null) break;
+                                }
+                            }
+                            if (renderer != null) break;
+                        }
+
+                        // 备选方案：如果上面都没找到，用原来的逻辑
                         if (renderer == null)
                         {
-                            renderer = panel.GetComponentInChildren<Renderer>();
+                            renderer = panel.GetComponent<Renderer>();
+                            if (renderer == null)
+                            {
+                                renderer = panel.GetComponentInChildren<Renderer>();
+                            }
                         }
 
                         if (renderer != null)
@@ -212,13 +263,11 @@ namespace PVSimulator.SolarPanel
                 // 尝试匹配 tableId
                 if (groupRenderers.TryGetValue(info.tableId, out var renderers))
                 {
-                    propertyBlock.SetColor("_BaseColor", color);
-
                     foreach (var renderer in renderers)
                     {
                         if (renderer != null)
                         {
-                            renderer.SetPropertyBlock(propertyBlock);
+                            SetRendererColor(renderer, color);
                             updatedCount++;
                         }
                     }
@@ -227,12 +276,6 @@ namespace PVSimulator.SolarPanel
                 {
                     missedCount++;
                 }
-            }
-
-            // 输出调试信息（每5秒一次）
-            if (UnityEngine.Time.frameCount % 300 == 0 && missedCount > 0)
-            {
-                Debug.LogWarning($"[ShadingHeatmap] 未匹配: {missedCount}, 已更新: {updatedCount}");
             }
         }
 
@@ -287,10 +330,22 @@ namespace PVSimulator.SolarPanel
             {
                 if (renderer != null)
                 {
-                    propertyBlock.SetColor("_BaseColor", normalPanelColor);
-                    renderer.SetPropertyBlock(propertyBlock);
+                    SetRendererColor(renderer, normalPanelColor);
                 }
             }
+        }
+
+        /// <summary>
+        /// 设置渲染器颜色（尝试多个shader属性）
+        /// </summary>
+        private void SetRendererColor(Renderer renderer, Color color)
+        {
+            if (renderer == null) return;
+
+            renderer.GetPropertyBlock(propertyBlock);
+            propertyBlock.SetColor(BaseColorID, color);
+            propertyBlock.SetColor(ColorID, color);
+            renderer.SetPropertyBlock(propertyBlock);
         }
 
         /// <summary>
@@ -311,17 +366,6 @@ namespace PVSimulator.SolarPanel
             {
                 lastUpdateTime = UnityEngine.Time.time;
                 var info = panelController.GetTrackingInfo();
-
-                // 调试：输出第一个跟踪器的遮挡系数
-                if (info != null && info.Count > 0)
-                {
-                    var first = info[0];
-                    if (first.shadingFactor < 0.99f)
-                    {
-                        Debug.Log($"[ShadingHeatmap] 检测到遮挡: {first.tableId} = {first.shadingFactor:F2}");
-                    }
-                }
-
                 UpdateHeatmap(info);
             }
         }

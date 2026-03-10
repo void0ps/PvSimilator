@@ -135,47 +135,84 @@ namespace PVSimulator.SolarPanel
                     panelContainer.transform.localPosition = new Vector3(x, torqueTubeY, z);
                     panelContainer.transform.localRotation = Quaternion.Euler(0, table.axis_azimuth, 0);
 
-                    // 实例化预制体（包含 Panel 和 Pole）
-                    // 由于预制体中 Panel 在中心位置 (0,0,0)，需要让整个实例向下偏移半个面板高度
-                    // 这样 Panel 的顶部就在扭力管位置（容器原点）
+                    // 实例化预制体
                     GameObject panelInstance = Instantiate(solarPanelPrefab, panelContainer.transform);
-                    panelInstance.transform.localPosition = new Vector3(0, -panelSize.y / 2f, 0);
                     panelInstance.transform.localRotation = Quaternion.identity;
+
+                    // ★ 关键：查找面板网格的 Y 偏移，调整预制体位置使面板中心在旋转原点
+                    // 预制体中 Solar_Panel1 在 Y=1.34（扭力管上方），需要向下偏移使其在旋转中心
+                    Transform panelMeshTransform = panelInstance.transform.Find("Panel/Solar_Panel1");
+                    float panelYOffset = 0f;
+                    if (panelMeshTransform != null)
+                    {
+                        panelYOffset = panelMeshTransform.localPosition.y;  // 获取 Y 偏移 (1.34)
+                    }
+
+                    // 预制体向下偏移，使面板网格中心在容器原点（旋转中心）
+                    panelInstance.transform.localPosition = new Vector3(0, -panelYOffset, 0);
+
                     panelInstance.SetActive(true);
 
-                    // 关键：从预制体实例中找到 Pole 并移到 rowContainer（不随面板旋转）
-                    Transform poleInPrefab = panelInstance.transform.Find("Pole");
-                    if (poleInPrefab != null)
+                    // 关键：只移动 Pole1 (杆子网格)，保留 Assembly (扭力管) 在旋转容器内
+                    // 这样面板围绕扭力管旋转，杆子保持垂直不旋转
+
+                    // 查找 Pole1 的路径（新prefab结构）
+                    Transform poleMesh = panelInstance.transform.Find("Structure/Pole/Pole1");
+                    if (poleMesh == null)
                     {
-                        // 先保存扭力管的世界位置
-                        Vector3 torqueTubeWorldPos = panelContainer.transform.position;
-
-                        // 移到 rowContainer（跳出旋转的容器）
-                        poleInPrefab.SetParent(rowContainer.transform, false);
-
-                        // 杆子容器位置 = 扭力管位置（杆子顶部在扭力管）
-                        poleInPrefab.position = torqueTubeWorldPos;
-
-                        // 设置杆子朝向（垂直）
-                        poleInPrefab.rotation = Quaternion.Euler(0, table.axis_azimuth, 0);
-
-                        // 调整杆子内部的 Cube 高度
-                        // 关键：Cube 顶部在容器原点（扭力管位置），向下延伸到地面
-                        Transform poleCube = poleInPrefab.Find("Cube");
-                        if (poleCube != null)
+                        // 兼容旧prefab结构：Pole/Cube
+                        poleMesh = panelInstance.transform.Find("Pole/Cube");
+                    }
+                    if (poleMesh == null)
+                    {
+                        // 尝试在根级别找 Pole1
+                        poleMesh = panelInstance.transform.Find("Pole1");
+                    }
+                    if (poleMesh == null)
+                    {
+                        // 尝试找 Structure/Pole 然后找其子对象 Pole1
+                        Transform poleContainerTransform = panelInstance.transform.Find("Structure/Pole");
+                        if (poleContainerTransform != null)
                         {
-                            poleCube.localScale = new Vector3(poleSize.x, actualPoleHeight, poleSize.z);
-                            // Cube 中心向下偏移半个高度，使 Cube 顶部在原点（扭力管位置）
-                            poleCube.localPosition = new Vector3(0, -actualPoleHeight / 2f, 0);
+                            poleMesh = poleContainerTransform.Find("Pole1");
+                            if (poleMesh == null)
+                            {
+                                // 查找第一个包含 Renderer 且名称含 Pole 的子对象
+                                foreach (Transform child in poleContainerTransform)
+                                {
+                                    if (child.name.Contains("Pole") && child.GetComponent<Renderer>() != null)
+                                    {
+                                        poleMesh = child;
+                                        break;
+                                    }
+                                }
+                            }
                         }
+                    }
 
-                        poleInPrefab.name = $"Pole_{table.table_id}_{totalCount}";
+                    if (poleMesh != null)
+                    {
+                        // 计算扭力管的实际世界位置
+                        // 由于预制体向下偏移了 panelYOffset，扭力管位置也相应下移
+                        Vector3 torqueTubeWorldPos = panelContainer.transform.position + Vector3.down * panelYOffset;
 
-                        // 调试：验证杆子顶部在扭力管位置
-                        if (totalCount <= 3)
-                        {
-                            Debug.Log($"[SolarPanelGenerator] PanelContainer位置: {panelContainer.transform.position}, Pole位置: {poleInPrefab.position}");
-                        }
+                        // 创建杆子容器（在 Row 下，不随面板旋转）
+                        GameObject poleContainerObj = new GameObject($"Pole_{table.table_id}_{totalCount}");
+                        poleContainerObj.transform.parent = rowContainer.transform;
+                        poleContainerObj.transform.position = torqueTubeWorldPos;
+                        poleContainerObj.transform.rotation = Quaternion.Euler(0, table.axis_azimuth, 0);
+
+                        // 移动 Pole1 到杆子容器
+                        poleMesh.SetParent(poleContainerObj.transform, false);
+
+                        // 设置杆子网格的本地位置和缩放
+                        // 杆子顶部在容器原点（扭力管位置），杆子向下延伸
+                        poleMesh.localPosition = new Vector3(0, -actualPoleHeight / 2f, 0);
+                        poleMesh.localRotation = Quaternion.identity;
+
+                        // 调整杆子高度
+                        Vector3 meshScale = poleMesh.localScale;
+                        poleMesh.localScale = new Vector3(meshScale.x, actualPoleHeight, meshScale.z);
                     }
 
                     // 静态批处理
@@ -197,8 +234,6 @@ namespace PVSimulator.SolarPanel
             {
                 StaticBatchingUtility.Combine(panelContainer);
             }
-
-            Debug.Log($"[SolarPanelGenerator] 生成完成: {panelGroups.Count} 行, {totalCount} 个面板");
         }
 
         private GameObject CreateSimplePanelPrefab()
